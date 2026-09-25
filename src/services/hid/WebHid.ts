@@ -24,6 +24,8 @@ import {
   ICustomKeycode,
   IFetchEncodersKeymapsResult,
   IEncoderKeymaps,
+  ICustomMenuResult,
+  IFetchCustomMenuValueResult,
 } from './Hid';
 import { KeycodeList } from './KeycodeList';
 import {
@@ -32,6 +34,9 @@ import {
   BacklightSetValueCommand,
   BacklightValueId,
   BleMicroProStoreKeymapPersistentlyCommand,
+  CustomMenuGetValueCommand,
+  CustomMenuSaveCommand,
+  CustomMenuSetValueCommand,
   DynamicKeymapGetEncoderCommand,
   DynamicKeymapGetLayerCountCommand,
   DynamicKeymapMacroGetBufferCommand,
@@ -367,6 +372,81 @@ export class Keyboard implements IKeyboard {
           });
         }
       });
+      return this.enqueue(command);
+    });
+  }
+
+  fetchCustomMenuValue(
+    commandBytes: number[]
+  ): Promise<IFetchCustomMenuValueResult> {
+    return new Promise<IFetchCustomMenuValueResult>((resolve) => {
+      const command = new CustomMenuGetValueCommand(
+        { commandBytes },
+        async (result) => {
+          if (result.success) {
+            resolve({
+              success: !result.response!.unhandled,
+              unhandled: result.response!.unhandled,
+              value: result.response!.value,
+            });
+          } else {
+            resolve({
+              success: false,
+              error: result.error,
+              cause: result.cause,
+            });
+          }
+        }
+      );
+      return this.enqueue(command);
+    });
+  }
+
+  updateCustomMenuValue(
+    commandBytes: number[],
+    value: number[]
+  ): Promise<ICustomMenuResult> {
+    return new Promise<ICustomMenuResult>((resolve) => {
+      const command = new CustomMenuSetValueCommand(
+        { commandBytes, value },
+        async (result) => {
+          if (result.success) {
+            resolve({
+              success: !result.response!.unhandled,
+              unhandled: result.response!.unhandled,
+            });
+          } else {
+            resolve({
+              success: false,
+              error: result.error,
+              cause: result.cause,
+            });
+          }
+        }
+      );
+      return this.enqueue(command);
+    });
+  }
+
+  saveCustomMenu(channelId: number): Promise<ICustomMenuResult> {
+    return new Promise<ICustomMenuResult>((resolve) => {
+      const command = new CustomMenuSaveCommand(
+        { channelId },
+        async (result) => {
+          if (result.success) {
+            resolve({
+              success: !result.response!.unhandled,
+              unhandled: result.response!.unhandled,
+            });
+          } else {
+            resolve({
+              success: false,
+              error: result.error,
+              cause: result.cause,
+            });
+          }
+        }
+      );
       return this.enqueue(command);
     });
   }

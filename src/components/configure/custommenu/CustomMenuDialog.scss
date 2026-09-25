@@ -1,0 +1,70 @@
+@use '../../../variables';
+
+.custom-menu-dialog {
+  .close-dialog {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+
+    &:hover {
+      color: variables.$primary-light;
+      cursor: pointer;
+    }
+  }
+
+  .custom-menu-loading {
+    display: flex;
+    justify-content: center;
+    padding: 24px 0;
+  }
+
+  .custom-menu-content {
+    padding-top: 8px;
+  }
+
+  .custom-menu-group {
+    margin-bottom: 8px;
+  }
+
+  .custom-menu-group-label {
+    margin-top: 12px;
+    margin-bottom: 4px;
+  }
+
+  .custom-menu-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-height: 48px;
+    gap: 16px;
+  }
+
+  .custom-menu-row-label {
+    flex: 0 0 40%;
+  }
+
+  .custom-menu-row-control {
+    flex: 1 1 auto;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .custom-menu-color {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    gap: 16px;
+  }
+
+  .custom-menu-color-swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    flex: 0 0 auto;
+  }
+
+  .custom-menu-color-sliders {
+    flex: 1 1 auto;
+  }
+}

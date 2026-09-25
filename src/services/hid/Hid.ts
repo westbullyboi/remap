@@ -158,6 +158,15 @@ export interface IFetchViaProtocolVersionResult extends IResult {
   viaProtocolVersion?: number;
 }
 
+export interface ICustomMenuResult extends IResult {
+  // True when the firmware does not handle the channel / value id.
+  unhandled?: boolean;
+}
+
+export interface IFetchCustomMenuValueResult extends ICustomMenuResult {
+  value?: number[];
+}
+
 export interface IKeyboard {
   getDevice(): HIDDevice;
   getHid(): IHid;
@@ -218,6 +227,14 @@ export interface IKeyboard {
   fetchMacroBuffer(bufferSize: number): Promise<IFetchMacroBufferResult>;
   updateMacroBuffer(offset: number, buffer: Uint8Array): Promise<IResult>;
   fetchViaProtocolVersion(): Promise<IFetchViaProtocolVersionResult>;
+  fetchCustomMenuValue(
+    commandBytes: number[]
+  ): Promise<IFetchCustomMenuValueResult>;
+  updateCustomMenuValue(
+    commandBytes: number[],
+    value: number[]
+  ): Promise<ICustomMenuResult>;
+  saveCustomMenu(channelId: number): Promise<ICustomMenuResult>;
 }
 
 export interface ICommand {

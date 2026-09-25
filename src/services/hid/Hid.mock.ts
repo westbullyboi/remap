@@ -284,4 +284,19 @@ export const mockIKeyboad: IKeyboard = {
       resolve({ success: true, viaProtocolVersion: 0x0a });
     });
   },
+  fetchCustomMenuValue: (_commandBytes: number[]) => {
+    return new Promise((resolve) => {
+      resolve({ success: true, value: [0] });
+    });
+  },
+  updateCustomMenuValue: (_commandBytes: number[], _value: number[]) => {
+    return new Promise((resolve) => {
+      resolve({ success: true });
+    });
+  },
+  saveCustomMenu: (_channelId: number) => {
+    return new Promise((resolve) => {
+      resolve({ success: true });
+    });
+  },
 };

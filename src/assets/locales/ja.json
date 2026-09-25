@@ -393,5 +393,14 @@
   "Only hexadecimal characters (0-9, A-F) are allowed": "16進数文字（0-9、A-F）のみ入力可能です",
   "Confirm File Overwrite": "ファイル上書きの確認",
   "The following files already exist: {{files}}. Do you want to overwrite them?": "以下のファイルが既に存在します：{{files}}。上書きしますか？",
-  "Keyboard Layout": "キーボードレイアウト"
+  "Keyboard Layout": "キーボードレイアウト",
+  "Keyboard Settings": "キーボード設定",
+  "Reading the keyboard settings failed.": "キーボード設定の読み込みに失敗しました。",
+  "Updating the keyboard setting failed.": "キーボード設定の更新に失敗しました。",
+  "Saving the keyboard setting failed.": "キーボード設定の保存に失敗しました。",
+  "Not supported by the keyboard firmware": "キーボードのファームウェアが対応していません",
+  "Hue": "色相",
+  "Enter a hexadecimal keycode": "16進数のキーコードを入力してください",
+  "Execute": "実行",
+  "No settings are available.": "利用できる設定がありません。"
 }

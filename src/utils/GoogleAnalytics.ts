@@ -22,6 +22,7 @@ type IActionName =
   | 'catalog/search'
   | 'configure/cheat_sheet'
   | 'configure/clear_all_changes'
+  | 'configure/custom_menu'
   | 'configure/flash'
   | 'configure/flash_macro'
   | 'configure/import_local_file'

@@ -349,5 +349,14 @@
   "Date": "Date",
   "Amount": "Amount",
   "Error": "Error",
-  "If you have any questions about your purchase, please contact the Remap team.": "If you have any questions about your purchase, please contact the Remap team."
+  "If you have any questions about your purchase, please contact the Remap team.": "If you have any questions about your purchase, please contact the Remap team.",
+  "Keyboard Settings": "Keyboard Settings",
+  "Reading the keyboard settings failed.": "Reading the keyboard settings failed.",
+  "Updating the keyboard setting failed.": "Updating the keyboard setting failed.",
+  "Saving the keyboard setting failed.": "Saving the keyboard setting failed.",
+  "Not supported by the keyboard firmware": "Not supported by the keyboard firmware",
+  "Hue": "Hue",
+  "Enter a hexadecimal keycode": "Enter a hexadecimal keycode",
+  "Execute": "Execute",
+  "No settings are available.": "No settings are available."
 }

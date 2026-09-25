@@ -342,6 +342,118 @@ export class RgbLightSaveCommand extends AbstractCommand<
   }
 }
 
+const isCustomMenuResponse = (
+  resultArray: Uint8Array,
+  commandId: number,
+  commandBytes: number[]
+): boolean =>
+  (resultArray[0] === commandId || resultArray[0] === id_unhandled) &&
+  commandBytes.every((b, i) => resultArray[i + 1] === b);
+
+export interface ICustomMenuGetValueRequest extends ICommandRequest {
+  commandBytes: number[]; // [channel id, value id, ...]
+}
+
+export interface ICustomMenuGetValueResponse extends ICommandResponse {
+  unhandled: boolean;
+  value: number[]; // Bytes following the command bytes.
+}
+
+export class CustomMenuGetValueCommand extends AbstractCommand<
+  ICustomMenuGetValueRequest,
+  ICustomMenuGetValueResponse
+> {
+  createReport(): Uint8Array {
+    return new Uint8Array([
+      id_custom_get_value,
+      ...this.getRequest().commandBytes,
+    ]);
+  }
+
+  createResponse(resultArray: Uint8Array): ICustomMenuGetValueResponse {
+    return {
+      unhandled: resultArray[0] === id_unhandled,
+      value: Array.from(
+        resultArray.slice(1 + this.getRequest().commandBytes.length)
+      ),
+    };
+  }
+
+  isSameRequest(resultArray: Uint8Array): boolean {
+    return isCustomMenuResponse(
+      resultArray,
+      id_custom_get_value,
+      this.getRequest().commandBytes
+    );
+  }
+}
+
+export interface ICustomMenuSetValueRequest extends ICommandRequest {
+  commandBytes: number[]; // [channel id, value id, ...]
+  value: number[];
+}
+
+export interface ICustomMenuSetValueResponse extends ICommandResponse {
+  unhandled: boolean;
+}
+
+export class CustomMenuSetValueCommand extends AbstractCommand<
+  ICustomMenuSetValueRequest,
+  ICustomMenuSetValueResponse
+> {
+  createReport(): Uint8Array {
+    const req = this.getRequest();
+    return new Uint8Array([
+      id_custom_set_value,
+      ...req.commandBytes,
+      ...req.value,
+    ]);
+  }
+
+  createResponse(resultArray: Uint8Array): ICustomMenuSetValueResponse {
+    return {
+      unhandled: resultArray[0] === id_unhandled,
+    };
+  }
+
+  isSameRequest(resultArray: Uint8Array): boolean {
+    return isCustomMenuResponse(
+      resultArray,
+      id_custom_set_value,
+      this.getRequest().commandBytes
+    );
+  }
+}
+
+export interface ICustomMenuSaveRequest extends ICommandRequest {
+  channelId: number;
+}
+
+export interface ICustomMenuSaveResponse extends ICommandResponse {
+  unhandled: boolean;
+}
+
+export class CustomMenuSaveCommand extends AbstractCommand<
+  ICustomMenuSaveRequest,
+  ICustomMenuSaveResponse
+> {
+  createReport(): Uint8Array {
+    return new Uint8Array([id_custom_save, this.getRequest().channelId]);
+  }
+
+  createResponse(resultArray: Uint8Array): ICustomMenuSaveResponse {
+    return {
+      unhandled: resultArray[0] === id_unhandled,
+    };
+  }
+
+  isSameRequest(resultArray: Uint8Array): boolean {
+    return isCustomMenuResponse(resultArray, id_custom_save, [
+      this.getRequest().channelId,
+    ]);
+  }
+}
+
 export interface IDynamicKeymapGetKeycodeRequest extends ICommandRequest {
   layer: number;
   row: number;

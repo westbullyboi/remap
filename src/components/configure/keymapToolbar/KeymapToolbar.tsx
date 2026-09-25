@@ -20,6 +20,7 @@ import FlareRoundedIcon from '@mui/icons-material/FlareRounded';
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
 import ViewQuiltRoundedIcon from '@mui/icons-material/ViewQuiltRounded';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import {
   KeymapMenuActionsType,
   KeymapMenuStateType,
@@ -28,6 +29,11 @@ import { IKeymap } from '../../../services/hid/Hid';
 import { genKey, Key } from '../keycodekey/KeyGen';
 import { KeymapPdfGenerator } from '../../../services/pdf/KeymapPdfGenerator';
 import LightingDialog from '../lighting/LightingDialog';
+import CustomMenuDialog from '../custommenu/CustomMenuDialog';
+import {
+  ICustomMenu,
+  parseCustomMenus,
+} from '../../../services/hid/CustomMenu';
 import LayoutOptionPopover from '../layoutoption/LayoutOptionPopover.container';
 import { ImportFileIcon } from '../../common/icons/ImportFileIcon';
 import ImportDefDialog from '../importDef/ImportDefDialog.container';
@@ -46,6 +52,7 @@ type KeymapMenuPropsType = OwnProp &
 
 type OwnKeymapMenuStateType = {
   openLightingDialog: boolean;
+  openCustomMenuDialog: boolean;
   layoutOptionPopoverPosition: { left: number; top: number } | null;
   keymapListPopoverPosition: { left: number; top: number } | null;
   openImportDefDialog: boolean;
@@ -61,6 +68,7 @@ export default class KeymapMenu extends React.Component<
     super(props);
     this.state = {
       openLightingDialog: false,
+      openCustomMenuDialog: false,
       layoutOptionPopoverPosition: null,
       keymapListPopoverPosition: null,
       openImportDefDialog: false,
@@ -182,6 +190,41 @@ export default class KeymapMenu extends React.Component<
     this.setState({ openLightingDialog: true });
   }
 
+  private customMenusCache: {
+    source: unknown;
+    menus: ICustomMenu[];
+  } | null = null;
+
+  // Parse the "menus" property only when the keyboard definition changes.
+  private get customMenus(): ICustomMenu[] {
+    const source = this.props.keyboardDefinition!.menus;
+    if (
+      this.customMenusCache === null ||
+      this.customMenusCache.source !== source
+    ) {
+      this.customMenusCache = { source, menus: parseCustomMenus(source) };
+    }
+    return this.customMenusCache.menus;
+  }
+
+  private onCustomMenuClick() {
+    sendEventToGoogleAnalytics('configure/custom_menu', {
+      vendor_id: this.props.keyboard!.getInformation().vendorId,
+      product_id: this.props.keyboard!.getInformation().productId,
+      product_name: this.props.keyboard!.getInformation().productName,
+    });
+
+    this.setState({ openCustomMenuDialog: true });
+  }
+
+  private onCloseCustomMenuDialog = () => {
+    this.setState({ openCustomMenuDialog: false });
+  };
+
+  private onErrorCustomMenu = (message: string) => {
+    this.props.error!(message);
+  };
+
   private onClickSubMenu(event: React.MouseEvent) {
     const elem = event.currentTarget;
     this.setState({
@@ -216,6 +259,8 @@ export default class KeymapMenu extends React.Component<
       this.props.keyboardDefinition!.lighting
     );
     const hasLayoutOptions = 0 < this.props.selectedKeyboardOptions!.length;
+    const customMenus = this.customMenus;
+    const hasCustomMenus = 0 < customMenus.length;
     const { vendorId, productId, productName } =
       this.props.keyboard!.getInformation();
     return (
@@ -251,6 +296,25 @@ export default class KeymapMenu extends React.Component<
                   }}
                 >
                   <FlareRoundedIcon />
+                </IconButton>
+              </Tooltip>
+            </div>
+          )}
+
+          {hasCustomMenus && (
+            <div className="keymap-menu-item">
+              <Tooltip
+                arrow={true}
+                placement="top"
+                title={t('Keyboard Settings')}
+              >
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    this.onCustomMenuClick();
+                  }}
+                >
+                  <TuneRoundedIcon />
                 </IconButton>
               </Tooltip>
             </div>
@@ -362,6 +426,15 @@ export default class KeymapMenu extends React.Component<
             this.setState({ openLightingDialog: false });
           }}
         />
+        {hasCustomMenus && (
+          <CustomMenuDialog
+            open={this.state.openCustomMenuDialog}
+            onClose={this.onCloseCustomMenuDialog}
+            keyboard={this.props.keyboard!}
+            menus={customMenus}
+            onError={this.onErrorCustomMenu}
+          />
+        )}
         <ImportDefDialog
           open={this.state.openImportDefDialog}
           onClose={this.onCloseImportDefFileDialog.bind(this)}
