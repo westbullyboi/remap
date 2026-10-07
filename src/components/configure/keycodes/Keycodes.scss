@@ -15,11 +15,11 @@
     flex-direction: row;
     &:hover {
       .keycodekey {
-        border-color: variables.$primary-light;
+        border-color: variables.$cfg-accent;
       }
       .sub-category {
         span {
-          color: variables.$primary-light;
+          color: variables.$cfg-accent;
         }
       }
     }
@@ -56,6 +56,8 @@
   justify-content: center;
   align-items: flex-end;
   padding: variables.$space-m 0;
+  border-bottom: 1px solid variables.$cfg-panel-border;
+  font-family: variables.$cfg-font;
   .blank-category {
     width: var(--switch-width);
   }
@@ -65,20 +67,25 @@
       button:disabled {
         color: variables.$color-gray-400;
         background-color: #ffffff00;
+        border-bottom-color: transparent;
       }
     }
     button {
-      font-weight: 400;
+      font-weight: 500;
+      font-family: inherit;
+      color: variables.$cfg-text-dim;
       background-color: #ffffff00;
-      &:disabled,
-      &:hover {
-        background-color: variables.$primary-pale;
-      }
+      border-radius: 0;
+      border-bottom: 2px solid transparent;
+      padding-bottom: 6px;
       &:disabled {
-        color: white;
+        color: variables.$cfg-text;
+        border-bottom-color: variables.$cfg-text;
+        background-color: #ffffff00;
       }
-      &:hover {
-        transition: background-color 0.5s;
+      &:hover:not(:disabled) {
+        background-color: #ececee;
+        transition: background-color 0.2s;
       }
     }
     .keycodes-search {

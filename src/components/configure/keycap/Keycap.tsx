@@ -669,5 +669,6 @@ const StyledBadge = withStyles((_) => ({
     padding: 0,
     minWidth: 4,
     borderRadius: 2,
+    backgroundColor: '#f5821f',
   },
 }))(Badge);

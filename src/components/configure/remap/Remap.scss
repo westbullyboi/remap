@@ -20,13 +20,13 @@
     display: flex;
     flex-direction: column;
     padding-bottom: 32px;
-    background-color: white;
+    background-color: variables.$cfg-canvas-bg;
   }
   .macro {
     display: flex;
     flex-direction: column;
     padding-bottom: 32px;
-    background-color: white;
+    background-color: variables.$cfg-canvas-bg;
   }
 }
 .keycode {
@@ -35,7 +35,8 @@
   flex-direction: column;
   padding: variables.$space-m variables.$space-m variables.$space-xl
     variables.$space-m;
-  background-color: variables.$background-color-gray;
+  background-color: variables.$cfg-panel-bg;
+  border-top: 1px solid variables.$cfg-panel-border;
   overflow-y: auto;
 
   .disable {

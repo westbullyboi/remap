@@ -224,7 +224,11 @@ export default class Header extends React.Component<HeaderProps, HeaderState> {
               onMouseEnter={this.startLogoAnim.bind(this)}
               onMouseLeave={this.endLogoAnim.bind(this)}
             >
-              <Logo width={100} animation={this.state.logoAnimation} />
+              <Logo
+                width={100}
+                color="#f5f5f6"
+                animation={this.state.logoAnimation}
+              />
             </a>
           </div>
 

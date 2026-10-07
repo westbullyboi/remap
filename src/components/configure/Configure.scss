@@ -4,7 +4,8 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background-color: variables.$background-color-gray;
+  background-color: variables.$cfg-canvas-bg;
+  font-family: variables.$cfg-font;
 }
 
 .message-box-wrapper {

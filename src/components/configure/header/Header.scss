@@ -9,8 +9,10 @@
   align-items: center;
   margin: 0;
   padding: 0 variables.$space-m;
-  background: white;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.2);
+  background: variables.$cfg-header-bg;
+  color: variables.$cfg-header-text;
+  font-family: variables.$cfg-font;
+  border-bottom: 1px solid variables.$cfg-header-border;
   z-index: 2;
   .kbd-device {
     display: flex;
@@ -20,6 +22,7 @@
       flex-direction: row;
       align-items: center;
       cursor: pointer;
+      color: variables.$cfg-header-text;
 
       .kbd-name {
         display: flex;
@@ -31,19 +34,25 @@
           overflow: hidden;
           white-space: nowrap;
           text-overflow: ellipsis;
+          color: variables.$cfg-header-text;
+          font-size: 1rem;
+          font-weight: 600;
         }
         .ids {
           font-size: variables.$font-xs;
-          color: variables.$color-gray;
+          color: variables.$cfg-header-text-dim;
           margin-top: -4px;
         }
       }
 
       &:hover {
-        color: variables.$primary;
+        color: variables.$cfg-accent;
         .kbd-name {
+          h2 {
+            color: variables.$cfg-accent;
+          }
           .ids {
-            color: variables.$primary;
+            color: variables.$cfg-accent;
           }
         }
       }
@@ -152,8 +161,8 @@
     opacity: 0.5;
   }
   100% {
-    border-color: variables.$primary;
-    background-color: variables.$primary;
+    border-color: variables.$cfg-accent;
+    background-color: variables.$cfg-accent;
     opacity: 1;
   }
 }
@@ -167,7 +176,7 @@
   }
 
   40% {
-    border-color: variables.$primary;
+    border-color: variables.$cfg-accent;
     background-color: transparent;
     transform: scale(1, 1);
   }
@@ -178,8 +187,8 @@
     width: 2.5rem;
     text-indent: -0.6125rem;
     color: transparent;
-    border-color: variables.$primary;
-    background-color: variables.$primary;
+    border-color: variables.$cfg-accent;
+    background-color: variables.$cfg-accent;
   }
 
   80% {
@@ -189,8 +198,8 @@
   100% {
     margin-left: 1.25rem;
     width: 2.5rem;
-    background-color: variables.$primary;
-    border-color: variables.$primary;
+    background-color: variables.$cfg-accent;
+    border-color: variables.$cfg-accent;
     color: transparent;
   }
 }
@@ -241,7 +250,7 @@
   }
 
   10% {
-    border-color: variables.$primary;
+    border-color: variables.$cfg-accent;
   }
 
   20% {
@@ -255,11 +264,11 @@
     opacity: 1;
     width: 7rem;
     transform: scale(1, 1);
-    border-color: variables.$primary;
+    border-color: variables.$cfg-accent;
   }
 
   100% {
-    border-color: variables.$primary-pale;
+    border-color: variables.$cfg-accent-dark;
     opacity: 0;
   }
 }
@@ -278,21 +287,29 @@
   position: relative;
   overflow: hidden;
   width: 7rem;
-  color: variables.$primary-pale;
-  border: 3px solid variables.$primary-pale;
-  background-color: transparent;
+  color: variables.$cfg-header-text-dim;
+  border: 2px solid variables.$cfg-header-border;
+  background-color: variables.$cfg-header-bg-raised;
   cursor: pointer;
   line-height: 2;
   margin: 0;
   padding: 0;
   border-radius: 1.5rem;
-  font-size: 1rem;
+  font-size: 0.9rem;
+  font-family: variables.$cfg-font;
+  font-weight: 600;
   outline: none;
-  transition: transform 0.125s;
+  transition:
+    transform 0.125s,
+    background-color 0.15s;
 
   &.enable {
-    color: white;
+    color: #19191c;
+    border-color: variables.$cfg-accent;
     animation: button-enable-intro 0.4s forwards;
+    &:hover {
+      background-color: variables.$cfg-accent-dark;
+    }
   }
 
   &.disable {
@@ -353,7 +370,7 @@
     height: auto;
     border-radius: 0;
     background-color: transparent;
-    color: variables.$primary;
+    color: variables.$cfg-accent-dark;
     content: 'success';
     opacity: 0;
     z-index: 2;
