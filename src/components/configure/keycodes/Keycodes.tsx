@@ -23,7 +23,12 @@ import {
 } from '../../../services/macro/Macro';
 import { KeymapCategory } from '../../../services/hid/KeycodeList';
 
-type OwnProps = {};
+type OwnProps = {
+  // When set, clicking a keycode picks it (the 3D Key Config assigns it to
+  // the selected key). Without it the keycodes are only dragged.
+  // eslint-disable-next-line no-unused-vars
+  onPickKey?: (key: Key) => void;
+};
 
 type KeycodesProps = OwnProps &
   Partial<KeycodesActionsType> &
@@ -300,6 +305,7 @@ export default class Keycodes extends React.Component<KeycodesProps, OwnState> {
           value={key}
           draggable={true}
           clickable={isMacro && !macrEditMode}
+          onPick={isMacro ? undefined : this.props.onPickKey}
         />
       );
     });

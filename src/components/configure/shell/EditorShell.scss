@@ -360,11 +360,20 @@ $card-shadow:
   }
 }
 // Top left: the keyboard's own label language menu is at the top right.
-.mx-shell-scale {
+.mx-shell-keyboard-tools {
   position: absolute;
   top: 12px;
   left: 16px;
-  z-index: 2;
+  z-index: 3;
+  display: flex;
+  gap: 8px;
+}
+// The 3D keyboard fills the area; its settings window holds the palette.
+.mx-shell-keyboard-3d {
+  flex: 1 1 auto;
+  min-height: 420px;
+  padding: 0;
+  overflow: hidden;
 }
 .mx-shell-keycodes {
   flex: 1 0 260px;

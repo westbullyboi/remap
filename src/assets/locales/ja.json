@@ -954,5 +954,9 @@
   "Keyboard information": "キーボードの情報",
   "Writing...": "反映中…",
   "Write to keyboard": "キーボードに反映",
-  "Try the new layout": "新しいレイアウトを試す"
+  "Try the new layout": "新しいレイアウトを試す",
+  "Keyboard view": "キーボードの表示",
+  "Loading 3D…": "3D を読み込み中…",
+  "Click a key to open its settings": "キーを押すと、そのキーの設定が開きます",
+  "Pick a keycode to assign it to this key": "キーコードを選ぶと、このキーに割り当てて閉じます"
 }
