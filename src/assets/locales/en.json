@@ -861,5 +861,9 @@
   "Keyboard information": "Keyboard information",
   "Writing...": "Writing...",
   "Write to keyboard": "Write to keyboard",
-  "Try the new layout": "Try the new layout"
+  "Try the new layout": "Try the new layout",
+  "Keyboard view": "Keyboard view",
+  "Loading 3D…": "Loading 3D…",
+  "Click a key to open its settings": "Click a key to open its settings",
+  "Pick a keycode to assign it to this key": "Pick a keycode to assign it to this key"
 }

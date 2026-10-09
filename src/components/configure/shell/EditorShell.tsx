@@ -29,6 +29,12 @@ import { Desc, EditMode, KnobTab, SplitBanner } from '../remap/Remap';
 import EditorSidebar from '../sidebar/EditorSidebar.container';
 import KeyInspector from '../inspector/KeyInspector.container';
 import Keycodes from '../keycodes/Keycodes.container';
+import Keymap3DView from '../keymap3d/Keymap3DView';
+import {
+  KeyboardViewMode,
+  loadKeyboardViewMode,
+  saveKeyboardViewMode,
+} from '../keymap3d/KeyboardViewMode';
 import Combos from '../combos/Combos';
 import PointingSettings from '../pointing/PointingSettings.container';
 import HeaderActions from '../header/HeaderActions';
@@ -283,34 +289,55 @@ function ApplyButton() {
 function KeyConfigView() {
   const { keyboardWidth, macroKey } = useKeyConfigDisplay();
   const [scale, setScale] = useState(loadKeyboardScale);
+  const [mode, setMode] = useState<KeyboardViewMode>(() =>
+    loadKeyboardViewMode()
+  );
   const areaRef = useRef<HTMLDivElement>(null);
   const zoom = useKeyboardZoom(areaRef, keyboardWidth, scale);
   // Horizontal room kept around the keyboard (same as the classic layout).
   const minWidth = keyboardWidth ? keyboardWidth + 64 : 0;
+  const changeMode = (next: KeyboardViewMode) => {
+    saveKeyboardViewMode(next);
+    setMode(next);
+  };
+
+  if (mode === '3d' && !macroKey) {
+    return (
+      <section className="mx-shell-card mx-shell-keyboard mx-shell-keyboard-3d">
+        <div className="mx-shell-keyboard-tools">
+          <KeyboardViewToggle mode={mode} onChange={changeMode} />
+        </div>
+        <Keymap3DView onUnavailable={() => setMode('2d')} />
+      </section>
+    );
+  }
 
   return (
     <React.Fragment>
       <section className="mx-shell-card mx-shell-keyboard" ref={areaRef}>
         {!macroKey && (
-          <div
-            className="mx-shell-segment mx-shell-scale"
-            role="group"
-            aria-label={t('Keyboard size')}
-          >
-            {KEYBOARD_SCALES.map((s) => (
-              <button
-                key={s.value}
-                type="button"
-                aria-pressed={scale === s.value}
-                title={`${t('Keyboard size')}: ${Math.round(s.value * 100)}%`}
-                onClick={() => {
-                  saveKeyboardScale(s.value);
-                  setScale(s.value);
-                }}
-              >
-                {t(`keyboardScale.${s.label}`)}
-              </button>
-            ))}
+          <div className="mx-shell-keyboard-tools">
+            <KeyboardViewToggle mode={mode} onChange={changeMode} />
+            <div
+              className="mx-shell-segment"
+              role="group"
+              aria-label={t('Keyboard size')}
+            >
+              {KEYBOARD_SCALES.map((s) => (
+                <button
+                  key={s.value}
+                  type="button"
+                  aria-pressed={scale === s.value}
+                  title={`${t('Keyboard size')}: ${Math.round(s.value * 100)}%`}
+                  onClick={() => {
+                    saveKeyboardScale(s.value);
+                    setScale(s.value);
+                  }}
+                >
+                  {t(`keyboardScale.${s.label}`)}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         <div className="keyboard-wrapper" style={{ minWidth, zoom }}>
@@ -326,6 +353,32 @@ function KeyConfigView() {
         </section>
       </div>
     </React.Fragment>
+  );
+}
+
+// Switches Key Config between the 3D and the 2D keyboard.
+function KeyboardViewToggle(props: {
+  mode: KeyboardViewMode;
+  // eslint-disable-next-line no-unused-vars
+  onChange: (mode: KeyboardViewMode) => void;
+}) {
+  return (
+    <div
+      className="mx-shell-segment"
+      role="group"
+      aria-label={t('Keyboard view')}
+    >
+      {(['3d', '2d'] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          aria-pressed={props.mode === m}
+          onClick={() => props.onChange(m)}
+        >
+          {m.toUpperCase()}
+        </button>
+      ))}
+    </div>
   );
 }
 

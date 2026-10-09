@@ -24,6 +24,9 @@ export type KeycodeKeyOwnProps = {
   value: Key;
   draggable: boolean;
   clickable?: boolean;
+  // Called when the keycode is clicked (see Keycodes' onPickKey).
+  // eslint-disable-next-line no-unused-vars
+  onPick?: (key: Key) => void;
 };
 
 export type KeycodeKeyProps = KeycodeKeyOwnProps &
@@ -95,6 +98,11 @@ export default class KeycodeKey extends React.Component<
             this.props.clickable && 'clickable',
             this.state.dragging && 'dragging',
           ].join(' ')}
+          onClick={
+            this.props.onPick && !this.props.value.keymap.isAny
+              ? () => this.props.onPick!(this.props.value)
+              : undefined
+          }
           onMouseEnter={this.hoverKey.bind(this, this.props.value)}
           onMouseLeave={this.hoverKey.bind(this, null)}
           draggable={draggable}
