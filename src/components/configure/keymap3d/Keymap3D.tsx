@@ -15,6 +15,7 @@ import {
   Plate,
   focusView,
   overviewView,
+  touchpadPlacement,
 } from './Keyboard3DGeometry';
 
 // The 3D keyboard of Key Config. Loaded lazily (see Keymap3DView) so that
@@ -32,6 +33,8 @@ type Keymap3DProps = {
   keys: Keymap3DKey[];
   plates: Plate[];
   bounds: Bounds;
+  // Draw the touchpad of the right half (keyboards that have one).
+  touchpad: boolean;
   selectedPos: string | null;
   // The key the camera zooms to (null: the whole keyboard).
   focusPos: string | null;
@@ -69,7 +72,7 @@ export default function Keymap3D(props: Keymap3DProps) {
         {props.plates.map((plate, i) => (
           <PlateMesh key={i} plate={plate} />
         ))}
-        <TouchpadMesh keys={props.keys} />
+        {props.touchpad && <TouchpadMesh keys={props.keys} />}
         {props.keys.map((k) => (
           <Keycap3D
             key={k.key.model.location}
@@ -100,27 +103,12 @@ function AnimatedKeyboard({ children }: { children: React.ReactNode }) {
 }
 
 function TouchpadMesh(props: { keys: Keymap3DKey[] }) {
-  // Find keys on the right half (x > 8)
-  const rightKeys = props.keys.filter((k) => k.key.x > 8);
-  if (rightKeys.length === 0) return null;
-
-  // The user says: "タッチパッドの位置は右キーボードの下部に存在する左端キーの上にタッチパッドが存在するのが正しい"
-  // Let's find the leftmost key (minX).
-  const minX = Math.min(...rightKeys.map((k) => k.key.x));
-  const minXKeys = rightKeys.filter((k) => Math.abs(k.key.x - minX) < 0.1);
-  // Among them, find the one at the bottom (maxZ).
-  const maxZ = Math.max(...minXKeys.map((k) => k.key.z));
-  const targetKey = minXKeys.find((k) => Math.abs(k.key.z - maxZ) < 0.1);
-
-  if (!targetKey) return null;
-
-  // Trackpad dimensions, slightly larger than a 1u keycap
-  const w = 1.3;
-  const d = 1.3;
-
-  // Center exactly on the target key
-  const cx = targetKey.key.x;
-  const cz = targetKey.key.z;
+  // "The touchpad sits on the leftmost key at the bottom of the right half."
+  const place = touchpadPlacement(props.keys.map((k) => k.key));
+  if (!place) return null;
+  const { w, d } = place;
+  const cx = place.x;
+  const cz = place.z;
 
   return (
     <group>

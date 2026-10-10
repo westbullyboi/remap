@@ -99,12 +99,47 @@ export function plates(keys: Key3D[], gap = 0.5): Plate[] {
     const root = find(i);
     groups.set(root, [...(groups.get(root) || []), i]);
   });
-  return Array.from(groups.values())
+  const result = Array.from(groups.values())
     .map((idx) => ({
       ...unionBounds(idx.map((i) => bounds[i])),
       keys: idx.map((i) => keys[i]),
     }))
     .sort((a, b) => a.minX - b.minX);
+  return result.length === 1 ? splitHalves(result[0]) : result;
+}
+
+// Split keyboards whose halves come close (thumb keys turned towards each
+// other, like the Dilemma) end up in one plate. Split it where a vertical
+// line passes between the keys with balanced halves on both sides.
+const MIN_SPLIT_GAP = 0.1;
+const MIN_HALF_SHARE = 0.35;
+
+function splitHalves(plate: Plate): Plate[] {
+  const items = plate.keys
+    .map((key) => ({ key, b: keyBounds(key) }))
+    .sort((a, b) => a.b.minX - b.b.minX);
+  let reach = -Infinity;
+  let best: { at: number; gap: number } | null = null;
+  for (let i = 0; i < items.length; i++) {
+    const gap = items[i].b.minX - reach;
+    const left = i;
+    const right = items.length - i;
+    if (
+      i > 0 &&
+      gap >= MIN_SPLIT_GAP &&
+      Math.min(left, right) >= items.length * MIN_HALF_SHARE &&
+      (!best || gap > best.gap)
+    ) {
+      best = { at: i, gap };
+    }
+    reach = Math.max(reach, items[i].b.maxX);
+  }
+  if (!best) return [plate];
+  const halves = [items.slice(0, best.at), items.slice(best.at)];
+  return halves.map((half) => ({
+    ...unionBounds(half.map((h) => h.b)),
+    keys: half.map((h) => h.key),
+  }));
 }
 
 export type CameraView = {
@@ -180,4 +215,30 @@ function shift(
   const visibleWidth =
     2 * distance * Math.tan((fovDeg * Math.PI) / 360) * aspect;
   return (visibleWidth * side) / 2;
+}
+
+// Where the touchpad of the right half is drawn: centered on the bottom key
+// of the innermost column of the keys right of x = 8. The caller decides
+// whether the keyboard has a touchpad at all.
+export type TouchpadPlacement = {
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+  // The key it is drawn on.
+  key: Key3D;
+};
+
+export function touchpadPlacement(
+  keys: Key3D[],
+  size = 1.3
+): TouchpadPlacement | null {
+  const right = keys.filter((k) => k.x > 8);
+  if (right.length === 0) return null;
+  const minX = Math.min(...right.map((k) => k.x));
+  const column = right.filter((k) => Math.abs(k.x - minX) < 0.1);
+  const maxZ = Math.max(...column.map((k) => k.z));
+  const key = column.find((k) => Math.abs(k.z - maxZ) < 0.1);
+  if (!key) return null;
+  return { x: key.x, z: key.z, w: size, d: size, key };
 }

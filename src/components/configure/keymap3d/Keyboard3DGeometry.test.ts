@@ -1,6 +1,7 @@
 import KeyModel from '../../../models/KeyModel';
 import KeyboardModel from '../../../models/KeyboardModel';
 import definition from '../../../../keyboards/matrix-split42/matrix-split42.json';
+import dilemma from '../../../../keyboards/dilemma/dilemma_afc6_bfc6.json';
 import {
   fitDistance,
   focusView,
@@ -8,6 +9,7 @@ import {
   keyBounds,
   overviewView,
   plates,
+  touchpadPlacement,
   unionBounds,
 } from './Keyboard3DGeometry';
 
@@ -74,5 +76,46 @@ describe('Keyboard3DGeometry', () => {
     expect(focus.distance).toBeLessThan(
       overviewView(bounds, 35, 2, 0.6).distance
     );
+  });
+
+  const keysOf = (keymap: any) =>
+    new KeyboardModel(keymap)
+      .getKeymap()
+      .keymaps.filter((k) => !k.isDecal)
+      .map(key3D);
+
+  test('the Dilemma halves are separate plates despite the close thumbs', () => {
+    const list = plates(keysOf(dilemma.layouts.keymap));
+    expect(list.length).toEqual(2);
+    expect(list[0].keys.length).toEqual(list[1].keys.length);
+    expect(list[0].maxX).toBeLessThan(list[1].minX);
+  });
+
+  test('a keyboard in one piece stays one plate', () => {
+    // 4 rows of 10 keys and a 3 x 3 block 0.25u to the right of them
+    const rows = [0, 1, 2, 3].map((r) =>
+      [...Array(10)].map((_, c) => `${r},${c}`)
+    );
+    const block = [0, 1, 2].map((r) => [
+      { x: 0.25 },
+      `${r},10`,
+      `${r},11`,
+      `${r},12`,
+    ]);
+    const keymap = rows.map((row, r) => (r < 3 ? [...row, ...block[r]] : row));
+    expect(plates(keysOf(keymap)).length).toEqual(1);
+  });
+
+  test('the touchpad keeps its place on both keyboards', () => {
+    // Matrix Split 42: the inner thumb key of the right half.
+    expect(
+      touchpadPlacement(keysOf(definition.layouts.keymap))?.key.model.pos
+    ).toEqual('7,0');
+    // Dilemma: the turned thumb keys are left of x = 8, so the bottom key
+    // of the inner main column.
+    expect(
+      touchpadPlacement(keysOf(dilemma.layouts.keymap))?.key.model.pos
+    ).toEqual('6,0');
+    expect(touchpadPlacement(keysOf([['0,0', '0,1']]))).toBeNull();
   });
 });

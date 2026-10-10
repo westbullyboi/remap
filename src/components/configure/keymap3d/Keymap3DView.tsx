@@ -28,6 +28,7 @@ import { KeymapPdfGenerator } from '../../../services/pdf/KeymapPdfGenerator';
 import './Keymap3DView.scss';
 
 import Keymap3D from './Keymap3D';
+import { keyboardHasTouchpad } from '../../../services/pointing/TouchpadLayout';
 
 // Share of the stage covered by the settings window.
 const WINDOW_SHARE = 0.42;
@@ -56,6 +57,9 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
     (s: RootState) => s.configure.layoutOptions.selectedOptions
   );
   const keymaps = useSelector((s: RootState) => s.entities.device.keymaps);
+  const hasTouchpad = useSelector((s: RootState) =>
+    keyboardHasTouchpad(s.entities.keyboardDefinition)
+  );
   const remaps = useSelector((s: RootState) => s.app.remaps);
   const layer = useSelector((s: RootState) => s.configure.keymap.selectedLayer);
   const selectedPos = useSelector(
@@ -231,6 +235,7 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
           keys={keys}
           plates={geometry.plates}
           bounds={geometry.bounds}
+          touchpad={hasTouchpad}
           selectedPos={windowShown ? selectedPos : null}
           focusPos={windowShown && !closing && !isOverview ? selectedPos : null}
           side={windowShown && !closing ? WINDOW_SHARE : 0}
