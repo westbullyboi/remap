@@ -12,10 +12,9 @@ import {
   Bounds,
   CameraView,
   Key3D,
-  Plate,
+  Plate3D,
   focusView,
   overviewView,
-  PLATE_PAD,
 } from './Keyboard3DGeometry';
 
 // The 3D keyboard of Key Config. Loaded lazily (see Keymap3DView) so that
@@ -31,7 +30,7 @@ export type Keymap3DKey = {
 
 type Keymap3DProps = {
   keys: Keymap3DKey[];
-  plates: Plate[];
+  plates: Plate3D[];
   bounds: Bounds;
   // Where the touchpad of the right half is drawn (null: none).
   touchpad: Bounds | null;
@@ -177,24 +176,39 @@ function CameraRig(props: {
   return null;
 }
 
-function PlateMesh(props: { plate: Plate }) {
-  const { plate } = props;
-  const pad = PLATE_PAD;
-  const w = plate.maxX - plate.minX + pad * 2;
-  const d = plate.maxZ - plate.minZ + pad * 2;
+// Base plate: the plate's outline, extruded down from just below the keys.
+const PLATE_THICKNESS = 0.36;
+const PLATE_TOP = -0.02;
+
+function PlateMesh(props: { plate: Plate3D }) {
+  const { outline } = props.plate;
+  const geometry = useMemo(() => {
+    if (outline.length < 3) return null;
+    // Shape in the X-Y plane with y = -z, laid flat by turning it -90
+    // degrees around X; the extrusion then goes up.
+    const shape = new THREE.Shape(
+      outline.map(([x, z]) => new THREE.Vector2(x, -z))
+    );
+    const g = new THREE.ExtrudeGeometry(shape, {
+      depth: PLATE_THICKNESS - 0.08,
+      bevelEnabled: true,
+      bevelThickness: 0.04,
+      bevelSize: 0.04,
+      bevelSegments: 2,
+      curveSegments: 4,
+    });
+    g.rotateX(-Math.PI / 2);
+    return g;
+  }, [outline]);
+  useEffect(() => () => geometry?.dispose(), [geometry]);
+  if (!geometry) return null;
   return (
-    <RoundedBox
-      args={[w, 0.36, d]}
-      radius={0.16}
-      smoothness={4}
-      position={[
-        (plate.minX + plate.maxX) / 2,
-        -0.2,
-        (plate.minZ + plate.maxZ) / 2,
-      ]}
+    <mesh
+      geometry={geometry}
+      position={[0, PLATE_TOP - PLATE_THICKNESS + 0.04, 0]}
     >
       <meshStandardMaterial color="#888888" roughness={0.65} metalness={0.1} />
-    </RoundedBox>
+    </mesh>
   );
 }
 

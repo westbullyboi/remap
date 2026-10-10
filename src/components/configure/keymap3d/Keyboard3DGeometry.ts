@@ -1,4 +1,5 @@
 import KeyModel from '../../../models/KeyModel';
+import { Outline, plateOutline } from './PlateOutline';
 
 // Geometry of the 3D keyboard, in key units (1u = one key pitch).
 // The keyboard lies on the X-Z plane: X goes right and Z goes towards the
@@ -228,28 +229,43 @@ const TOUCHPAD_MARGIN = 0.15;
 // Space kept between the base plates of the two halves.
 const PLATE_SEPARATION = 0.6;
 
+export type Plate3D = Plate & {
+  // The plate's shape (x, z) following its keys.
+  outline: Outline;
+};
+
 export type Layout3D = {
   keys: Key3D[];
-  plates: Plate[];
+  plates: Plate3D[];
   bounds: Bounds;
   // Where the touchpad is drawn (null: none).
   touchpad: Bounds | null;
 };
 
-// The 3D layout of the keyboard. With a touchpad, the right half moves
-// right when the keymap leaves too little room between the halves for it
-// (layouts often draw the halves closer than they are).
+const withOutline = (plate: Plate, extra: Bounds[] = []): Plate3D => ({
+  ...plate,
+  outline: plateOutline(plate.keys, extra, PLATE_PAD),
+});
+
+// The 3D layout of the keyboard. With a touchpad, the right half has it
+// beside its main rows and the left half the same blank area (the halves
+// are mirror images), and the right half moves right when the keymap
+// leaves too little room between them (layouts often draw the halves
+// closer than they are).
 export function layout3D(keys: Key3D[], touchpad: boolean): Layout3D {
   const list = plates(keys);
   const area = touchpad ? touchpadArea(list) : null;
   if (!area) {
-    return { keys, plates: list, bounds: unionBounds(list), touchpad: null };
+    const all = list.map((p) => withOutline(p));
+    return { keys, plates: all, bounds: unionBounds(list), touchpad: null };
   }
   const left = list[list.length - 2];
   const right = list[list.length - 1];
+  const blank = mirroredArea(left, area);
+  const leftEdge = Math.max(left.maxX, blank ? blank.maxX : -Infinity);
   const shift = Math.max(
     0,
-    left.maxX + 2 * PLATE_PAD + PLATE_SEPARATION - area.minX
+    leftEdge + 2 * PLATE_PAD + PLATE_SEPARATION - area.minX
   );
   const moved = new Map<Key3D, Key3D>(
     right.keys.map((k) => [k, { ...k, x: k.x + shift }])
@@ -260,16 +276,42 @@ export function layout3D(keys: Key3D[], touchpad: boolean): Layout3D {
     maxX: area.maxX + shift,
   };
   const rightKeys = right.keys.map((k) => moved.get(k)!);
-  const newRight: Plate = {
-    ...unionBounds([...rightKeys.map(keyBounds), pad]),
-    keys: rightKeys,
-  };
-  const newPlates = [...list.slice(0, -1), newRight];
+  const newRight = withOutline(
+    { ...unionBounds([...rightKeys.map(keyBounds), pad]), keys: rightKeys },
+    [pad]
+  );
+  const newLeft = withOutline(
+    blank ? { ...unionBounds([left, blank]), keys: left.keys } : left,
+    blank ? [blank] : []
+  );
+  const newPlates = [
+    ...list.slice(0, -2).map((p) => withOutline(p)),
+    newLeft,
+    newRight,
+  ];
   return {
     keys: keys.map((k) => moved.get(k) || k),
     plates: newPlates,
     bounds: unionBounds(newPlates),
     touchpad: pad,
+  };
+}
+
+// The left half's counterpart of the touchpad area: beside its innermost
+// main column, the same size.
+function mirroredArea(left: Plate, area: Bounds): Bounds | null {
+  const main0 = left.keys.filter((k) => k.angle === 0 && !k.model.isEncoder);
+  if (main0.length === 0) return null;
+  const top = Math.min(...main0.map((k) => k.z - k.d / 2));
+  const main = main0.filter((k) => k.z - k.d / 2 < top + 3);
+  const innerX = Math.max(...main.map((k) => k.x + k.w / 2));
+  const inner = main.filter((k) => Math.abs(k.x + k.w / 2 - innerX) < 0.01);
+  const minX = innerX + TOUCHPAD_MARGIN;
+  return {
+    minX,
+    maxX: minX + (area.maxX - area.minX),
+    minZ: Math.min(...inner.map((k) => k.z - k.d / 2)),
+    maxZ: Math.max(...inner.map((k) => k.z + k.d / 2)),
   };
 }
 

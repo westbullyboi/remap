@@ -1,6 +1,7 @@
 import KeyModel from '../../../models/KeyModel';
 import KeyboardModel from '../../../models/KeyboardModel';
 import definition from '../../../../keyboards/matrix-split42/matrix-split42.json';
+import { insideOutline } from './PlateOutline';
 import dilemma from '../../../../keyboards/dilemma/dilemma_afc6_bfc6.json';
 import {
   fitDistance,
@@ -138,5 +139,50 @@ describe('Keyboard3DGeometry', () => {
     expect(layout.touchpad).toBeNull();
     expect(layout.keys).toBe(keys);
     expect(layout.plates.length).toEqual(2);
+  });
+
+  test('the plates follow the keys, with the touchpad and its blank twin', () => {
+    const started = Date.now();
+    const layout = layout3D(keysOf(dilemma.layouts.keymap), true);
+    expect(Date.now() - started).toBeLessThan(2000);
+    const [left, right] = layout.plates;
+    [left, right].forEach((plate) => {
+      expect(plate.outline.length).toBeGreaterThan(6);
+      plate.keys.forEach((k) => {
+        // the key and its corners (slightly inside) are on the plate
+        expect(insideOutline(plate.outline, k.x, k.z)).toBe(true);
+        const b = keyBounds(k);
+        if (k.angle === 0) {
+          [
+            [b.minX + 0.05, b.minZ + 0.05],
+            [b.maxX - 0.05, b.maxZ - 0.05],
+          ].forEach(([x, z]) =>
+            expect(insideOutline(plate.outline, x, z)).toBe(true)
+          );
+        }
+      });
+    });
+    const pad = layout.touchpad!;
+    expect(
+      insideOutline(
+        right.outline,
+        (pad.minX + pad.maxX) / 2,
+        (pad.minZ + pad.maxZ) / 2
+      )
+    ).toBe(true);
+    // the left half has the same area beside its inner column
+    const innerLeft = Math.max(
+      ...left.keys.filter((k) => k.angle === 0).map((k) => k.x + k.w / 2)
+    );
+    expect(insideOutline(left.outline, innerLeft + 1.2, pad.minZ + 1)).toBe(
+      true
+    );
+    // not a rectangle: no plate below the outer columns, where there are
+    // no keys (the thumb keys are further in)
+    const outerBottom = Math.max(
+      ...left.keys.filter((k) => k.x < 1).map((k) => k.z + k.d / 2)
+    );
+    expect(insideOutline(left.outline, 0.5, outerBottom + 0.6)).toBe(false);
+    expect(left.maxZ).toBeGreaterThan(outerBottom + 0.6);
   });
 });

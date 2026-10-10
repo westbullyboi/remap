@@ -17,11 +17,12 @@ export function VanillaDither() {
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
 
-    // Using the same settings as the reference site
+    // One dot per CSS pixel: the finest 1-bit dithering that stays crisp
+    // (gridSize is in render pixels, so it follows the device pixel ratio).
     const ditherEffect = new DitheringEffect({
-      gridSize: 4.0, // 4x4 matrix size
-      pixelSizeRatio: 1.0, // Finer pixelation (1.0)
-      grayscaleOnly: true, // True for grayscale look like reference site
+      gridSize: Math.max(1, Math.round(gl.getPixelRatio())),
+      pixelSizeRatio: 1.0,
+      grayscaleOnly: true,
     });
 
     composer.addPass(new EffectPass(camera, ditherEffect));
