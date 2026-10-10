@@ -1963,3 +1963,33 @@ button:disabled {
     gap: 8px;
   }
 }
+
+// Background lights (PanelGlow) and the blur-in of the parts that change
+// with the section (white-card design).
+.mx-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+}
+.mx-anim-sub {
+  animation: mx-sub-a 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.mx-anim-pane {
+  animation: mx-pin-a 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.mx-anim-chip {
+  animation: mx-chip-a 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mx-glow {
+    transition: none !important;
+  }
+  .mx-anim-sub,
+  .mx-anim-pane,
+  .mx-anim-chip {
+    animation: none;
+  }
+}

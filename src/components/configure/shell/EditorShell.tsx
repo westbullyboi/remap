@@ -3,6 +3,7 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 import { t } from 'i18next';
 import Keymap3DView from '../keymap3d/Keymap3DView';
 import ViewWindow from './ViewWindow';
+import PanelGlow from './PanelGlow';
 import './EditorShell.scss';
 import { RootState } from '../../../store/state';
 import { AppActions, NotificationActions } from '../../../actions/actions';
@@ -52,6 +53,7 @@ export default function EditorShell() {
   return (
     <div className="mx-root">
       <div className="mx-panel">
+        <PanelGlow />
         <div className="mx-top mx-fade">
           <header className="mx-hdr">
             <ShellHeaderLeft view={view} bigTab={bigTab} />
@@ -82,7 +84,7 @@ export default function EditorShell() {
             </button>
           </nav>
 
-          <ShellSubNav view={view} bigTab={bigTab} />
+          <ShellSubNav key={bigTab} view={view} bigTab={bigTab} />
           <div className="mx-rule" style={{ marginTop: 0 }} />
         </div>
 
@@ -434,7 +436,7 @@ function ShellSubNav({
 }) {
   if (bigTab === 'keys') {
     return (
-      <nav className="mx-subnav" aria-label="Keys">
+      <nav className="mx-subnav mx-anim-sub" aria-label="Keys">
         <button
           className={view === 'keymap' ? 'cur' : ''}
           aria-current={view === 'keymap'}
@@ -468,7 +470,7 @@ function ShellSubNav({
   }
   if (bigTab === 'pointing') {
     return (
-      <nav className="mx-subnav" aria-label="Pointing">
+      <nav className="mx-subnav mx-anim-sub" aria-label="Pointing">
         <button
           className={view === 'touchpad' ? 'cur' : ''}
           aria-current={view === 'touchpad'}
@@ -502,7 +504,7 @@ function ShellSubNav({
   }
   if (bigTab === 'lighting') {
     return (
-      <nav className="mx-subnav" aria-label="Lighting">
+      <nav className="mx-subnav mx-anim-sub" aria-label="Lighting">
         <button
           className={view === 'leds' ? 'cur' : ''}
           aria-current={view === 'leds'}

@@ -94,7 +94,9 @@ export default function ViewWindow(props: { view: ConfigureView }) {
           </svg>
         </button>
       </div>
-      <div className="mx-viewwin-body">{body}</div>
+      <div key={view} className="mx-viewwin-body mx-anim-pane">
+        {body}
+      </div>
     </div>
   );
 }

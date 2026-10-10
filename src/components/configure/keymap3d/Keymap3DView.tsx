@@ -215,7 +215,10 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
   });
 
   const windowShown = open && !!selectedPos;
-  const tabWindow = useEditorView() !== 'keymap';
+  const editorView = useEditorView();
+  const tabWindow = editorView !== 'keymap';
+  // The stage's chips come in again when the section changes.
+  const chipKey = sectionOf(editorView);
   const current = selectedPos
     ? layerRemaps[selectedPos] || layerKeymaps[selectedPos]
     : undefined;
@@ -252,7 +255,11 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
         />
       </Scene3DBoundary>
 
-      <div className="mx-float" style={{ left: 16, top: 16 }}>
+      <div
+        key={`tl-${chipKey}`}
+        className="mx-float mx-anim-chip"
+        style={{ left: 16, top: 16 }}
+      >
         <span className="mx-chip mx-glass">
           <span
             style={{
@@ -271,7 +278,11 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
         </span>
       </div>
 
-      <div className="mx-float" style={{ right: 16, top: 16 }}>
+      <div
+        key={`tr-${chipKey}`}
+        className="mx-float mx-anim-chip"
+        style={{ right: 16, top: 16 }}
+      >
         <div
           className="mx-seg mx-glass"
           role="group"
@@ -355,7 +366,11 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
         </div>
       )}
 
-      <div className="mx-float" style={{ right: 16, bottom: 16 }}>
+      <div
+        key={`br-${chipKey}`}
+        className="mx-float mx-anim-chip"
+        style={{ right: 16, bottom: 16 }}
+      >
         <div
           className="mx-seg mx-glass"
           role="group"
@@ -555,7 +570,7 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
             ))}
           </div>
 
-          <div className="mx-wpane">
+          <div key={tab} className="mx-wpane mx-anim-pane">
             {tab === 'keycode' ? (
               <Keycodes onPickKey={assign} />
             ) : (
@@ -594,4 +609,11 @@ class Scene3DBoundary extends React.Component<
   render() {
     return this.state.failed ? null : this.props.children;
   }
+}
+
+function sectionOf(view: string): string {
+  if (['touchpad', 'autoMouse', 'timing', 'knobs'].includes(view))
+    return 'pointing';
+  if (view === 'leds') return 'lighting';
+  return 'keys';
 }
