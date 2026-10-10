@@ -73,6 +73,13 @@ function findKeytop(keymap: IKeymap, labels: KeyLabel[]): Keytop {
 }
 
 export const genKey = (keymap: IKeymap, lang?: KeyboardLabelLang): Key => {
+  if (!keymap) {
+    return {
+      label: 'null',
+      meta: '',
+      keymap,
+    };
+  }
   if (keymap.isAny) {
     return {
       label: keymap.keycodeInfo

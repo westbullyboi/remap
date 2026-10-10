@@ -22,9 +22,12 @@ import {
   keyBounds,
 } from './Keyboard3DGeometry';
 import type { Keymap3DKey } from './Keymap3D';
+import { hidActionsThunk } from '../../../actions/hid.action';
+import { KeyLabelLangs } from '../../../services/labellang/KeyLabelLangs';
+import { KeymapPdfGenerator } from '../../../services/pdf/KeymapPdfGenerator';
 import './Keymap3DView.scss';
 
-const Keymap3D = React.lazy(() => import('./Keymap3D'));
+import Keymap3D from './Keymap3D';
 
 // Share of the stage covered by the settings window.
 const WINDOW_SHARE = 0.42;
@@ -42,6 +45,10 @@ type Keymap3DViewProps = {
 // window assigns it to the key and closes the window.
 export default function Keymap3DView(props: Keymap3DViewProps) {
   const dispatch = useDispatch();
+  const keyboard = useSelector((s: RootState) => s.entities.keyboard);
+  const layerCount = useSelector(
+    (s: RootState) => s.entities.device.layerCount
+  );
   const keyboardKeymap = useSelector(
     (s: RootState) => s.entities.keyboardDefinition?.layouts.keymap
   );
@@ -60,6 +67,62 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
   const [closing, setClosing] = useState(false);
   const [tab, setTab] = useState<'keycode' | 'details'>('keycode');
   const closeTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const [isOverview, setIsOverview] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const unappliedCount = useMemo(() => {
+    let count = 0;
+    for (const l in remaps) {
+      count += Object.keys(remaps[l]).length;
+    }
+    return count;
+  }, [remaps]);
+
+  const handleClear = () => {
+    if (confirm('Clear all changes?')) {
+      const empty = Array.from({ length: layerCount || 4 }, () => ({}));
+      dispatch(AppActions.remapsSetKeys(empty));
+      dispatch(AppActions.encodersRemapsInit(layerCount || 4));
+      dispatch(KeydiffActions.clearKeydiff());
+    }
+  };
+
+  const handleReset = () => {
+    if (
+      confirm(
+        'Current keymap will be discarded and an initial keymap will be applied immediately.\nAre you sure to reset keymap?'
+      )
+    ) {
+      dispatch(hidActionsThunk.resetKeymap());
+      setMoreOpen(false);
+    }
+  };
+
+  const handlePdf = () => {
+    if (!keyboardKeymap || !keyboard) return;
+    const allKeys = [];
+    for (let i = 0; i < (layerCount || 4); i++) {
+      const layerKeymap = keymaps[i] || {};
+      const generated: { [pos: string]: Key } = {};
+      for (const pos of Object.keys(layerKeymap)) {
+        generated[pos] = genKey(layerKeymap[pos], labelLang);
+      }
+      allKeys.push(generated);
+    }
+    const pdf = new KeymapPdfGenerator(
+      keyboardKeymap,
+      allKeys as any,
+      layerCount || 4,
+      labelLang
+    );
+    const info = keyboard.getInformation();
+    if (info) {
+      pdf.genPdf(info.productName, options).catch(() => {
+        alert(`Couldn't generate the PDF.`);
+      });
+    }
+  };
 
   const models = useMemo(() => {
     if (!keyboardKeymap) return [];
@@ -108,6 +171,7 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
   const pick = (pos: string) => {
     clearTimeout(closeTimer.current);
     setClosing(false);
+    setIsOverview(false);
     const original = layerKeymaps[pos];
     const remapped = layerRemaps[pos];
     if (original && remapped) {
@@ -152,94 +216,342 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
     : undefined;
   const currentKey = current ? genKey(current, labelLang) : undefined;
 
+  const isUS = labelLang === 'en-us';
+  const isJIS = labelLang === 'ja-jp';
+
+  const originalKeymap = selectedPos ? layerKeymaps[selectedPos] : undefined;
+  const originalKey = originalKeymap
+    ? genKey(originalKeymap, labelLang)
+    : undefined;
+
   return (
-    <div className="keymap3d">
+    <>
       <Scene3DBoundary onError={props.onUnavailable}>
-        <Suspense
-          fallback={<div className="keymap3d-loading">{t('Loading 3D…')}</div>}
-        >
-          <Keymap3D
-            keys={keys}
-            plates={geometry.plates}
-            bounds={geometry.bounds}
-            selectedPos={windowShown ? selectedPos : null}
-            focusPos={windowShown && !closing ? selectedPos : null}
-            side={windowShown && !closing ? WINDOW_SHARE : 0}
-            onPick={pick}
-            onMiss={close}
-          />
-        </Suspense>
+        <Keymap3D
+          keys={keys}
+          plates={geometry.plates}
+          bounds={geometry.bounds}
+          selectedPos={windowShown ? selectedPos : null}
+          focusPos={windowShown && !closing && !isOverview ? selectedPos : null}
+          side={windowShown && !closing ? WINDOW_SHARE : 0}
+          onPick={pick}
+          onMiss={close}
+        />
       </Scene3DBoundary>
 
+      <div className="mx-float" style={{ left: 16, top: 16 }}>
+        <span className="mx-chip mx-glass">
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              background: '#1f8a55',
+            }}
+          ></span>
+          Layer {layer}
+          {unappliedCount > 0 && (
+            <span style={{ fontWeight: 500, color: '#6b6e75' }}>
+              · {unappliedCount} unapplied
+            </span>
+          )}
+        </span>
+      </div>
+
+      <div className="mx-float" style={{ right: 16, top: 16 }}>
+        <div
+          className="mx-seg mx-glass"
+          role="group"
+          aria-label="Keyboard Size"
+          style={{ padding: 3, borderRadius: 19 }}
+        >
+          <button
+            className="mx-pill sm mx-press on"
+            style={{ borderColor: 'transparent' }}
+          >
+            S
+          </button>
+          <button
+            className="mx-pill sm mx-press"
+            style={{ borderColor: 'transparent' }}
+          >
+            M
+          </button>
+          <button
+            className="mx-pill sm mx-press"
+            style={{ borderColor: 'transparent' }}
+          >
+            L
+          </button>
+        </div>
+        <button
+          className="mx-tool mx-press mx-glass"
+          disabled={unappliedCount === 0}
+          onClick={handleClear}
+          title="Clear all changes"
+          style={{ border: 'none' }}
+        >
+          Clear
+        </button>
+        <button
+          className="mx-tool mx-press mx-glass"
+          onClick={handlePdf}
+          title="Get keymap cheat sheet (PDF)"
+          style={{ border: 'none' }}
+        >
+          PDF
+        </button>
+        <div style={{ position: 'relative' }}>
+          <button
+            className="mx-dots mx-press mx-glass"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            onClick={() => setMoreOpen(!moreOpen)}
+            style={{ border: 'none' }}
+          ></button>
+          {moreOpen && (
+            <div
+              className="mx-menu r"
+              role="menu"
+              style={{ top: 44, minWidth: 280 }}
+            >
+              <button
+                className="mx-mi danger"
+                role="menuitem"
+                onClick={() => {
+                  if (confirm('Reset Keymap?')) {
+                    /* TODO */
+                  }
+                }}
+              >
+                Reset Keymap…
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
       {!windowShown && (
-        <p className="keymap3d-hint">{t('Click a key to open its settings')}</p>
+        <div
+          className="mx-float opt"
+          style={{ left: 16, bottom: 16, maxWidth: '46%' }}
+        >
+          <span className="mx-chip mx-glass">
+            <span>Click a key to open its settings</span>
+          </span>
+        </div>
       )}
+
+      <div className="mx-float" style={{ right: 16, bottom: 16 }}>
+        <div
+          className="mx-seg mx-glass"
+          role="group"
+          style={{ padding: 3, borderRadius: 19 }}
+        >
+          <button
+            className={`mx-pill sm mx-press ${isUS ? 'on' : ''}`}
+            onClick={() => dispatch(AppActions.updateLangLabel('en-us'))}
+            style={{ borderColor: 'transparent' }}
+          >
+            US
+          </button>
+          <button
+            className={`mx-pill sm mx-press ${isJIS ? 'on' : ''}`}
+            onClick={() => dispatch(AppActions.updateLangLabel('ja-jp'))}
+            style={{ borderColor: 'transparent' }}
+          >
+            JIS
+          </button>
+        </div>
+        <select
+          className="mx-sel mx-glass"
+          value={labelLang}
+          onChange={(e) =>
+            dispatch(AppActions.updateLangLabel(e.target.value as any))
+          }
+          style={{ height: 34, fontSize: 12, width: 180, border: 'none' }}
+        >
+          {KeyLabelLangs.KeyLabelLangMenus.map((o) => (
+            <option key={o.labelLang} value={o.labelLang}>
+              {o.menuLabel}
+            </option>
+          ))}
+        </select>
+        <div
+          className="mx-seg mx-glass"
+          style={{ padding: 3, borderRadius: 19 }}
+        >
+          <button
+            className={`mx-pill sm mx-press ${isOverview ? 'on' : ''}`}
+            onClick={() => setIsOverview(true)}
+            title="Overview"
+            style={{ borderColor: 'transparent' }}
+          >
+            Overview
+          </button>
+          <button
+            className={`mx-pill sm mx-press ${!isOverview ? 'on' : ''}`}
+            onClick={() => setIsOverview(false)}
+            title="Zoom"
+            style={{ borderColor: 'transparent' }}
+          >
+            Zoom
+          </button>
+        </div>
+      </div>
 
       {windowShown && current && currentKey && (
         <div
-          className={`keymap3d-window${closing ? ' closing' : ''}`}
+          className={`mx-win ${closing ? 'out' : ''}`}
           role="dialog"
           aria-label={t('Selected key')}
         >
-          <header className="keymap3d-window-header">
-            <span className="keymap3d-window-cap">{currentKey.label}</span>
-            <div className="keymap3d-window-title">
-              <span className="mono strong">
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              flex: 'none',
+            }}
+          >
+            <span
+              className="mx-cap"
+              style={{
+                position: 'relative',
+                width: 44,
+                height: 44,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {currentKey.label}
+            </span>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+                minWidth: 0,
+                flex: 1,
+              }}
+            >
+              <span
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  alignItems: 'baseline',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <b style={{ fontSize: 15 }}>Selected key</b>
+                <span className="mx-sub" style={{ fontSize: 12 }}>
+                  Layer {layer} · {selectedPos}
+                </span>
+              </span>
+              <span
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 12,
+                  wordBreak: 'break-all',
+                }}
+              >
                 {current.keycodeInfo
                   ? current.keycodeInfo.name.long
                   : hexadecimal(current.code, 4)}
               </span>
-              <span className="mono dim">
-                {t('Layer')} {layer} · {selectedPos}
-              </span>
               {current.desc && (
-                <span className="keymap3d-window-desc">
+                <span
+                  className="mx-sub mx-hide-short"
+                  style={{ fontSize: 12, lineHeight: 1.5 }}
+                >
                   {localizedKeycodeDesc(current.desc)}
                 </span>
               )}
             </div>
             <button
-              type="button"
-              className="keymap3d-window-close"
-              aria-label={t('Close')}
+              className="mx-ib mx-press"
+              aria-label="Close"
               onClick={close}
+              style={{ width: 36, height: 36, flex: 'none' }}
             >
-              ×
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.6"
+                strokeLinecap="round"
+              >
+                <path d="M6 6l12 12M18 6L6 18"></path>
+              </svg>
             </button>
-          </header>
-          <div className="keymap3d-tabs" role="tablist">
+          </div>
+
+          {selectedPos && layerRemaps[selectedPos] && originalKey && (
+            <div
+              className="mx-row"
+              style={{
+                padding: '6px 6px 6px 12px',
+                background: 'rgba(61, 111, 214, 0.1)',
+                flex: 'none',
+              }}
+            >
+              <span>
+                Before{' '}
+                <b>
+                  {originalKey.label || hexadecimal(originalKeymap!.code, 4)}
+                </b>{' '}
+                → <b>{currentKey.label}</b>
+              </span>
+              <button
+                className="mx-pill sm mx-press"
+                onClick={() => {
+                  dispatch(AppActions.remapsRemoveKey(layer, selectedPos));
+                  dispatch(KeydiffActions.clearKeydiff());
+                }}
+              >
+                Revert
+              </button>
+            </div>
+          )}
+
+          <div
+            className="mx-tabs"
+            role="tablist"
+            style={{
+              flex: 'none',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+            }}
+          >
             {(
               [
-                ['keycode', t('Keycode')],
-                ['details', t('Details')],
+                ['keycode', 'Keycode'],
+                ['details', 'Details'],
               ] as const
             ).map(([id, label]) => (
               <button
                 key={id}
-                type="button"
                 role="tab"
                 aria-selected={tab === id}
-                onClick={() => setTab(id)}
+                onClick={() => setTab(id as any)}
               >
                 {label}
               </button>
             ))}
           </div>
-          <div className="keymap3d-window-body">
+
+          <div className="mx-wpane">
             {tab === 'keycode' ? (
               <Keycodes onPickKey={assign} />
             ) : (
               <KeyInspector />
             )}
           </div>
-          {tab === 'keycode' && (
-            <p className="keymap3d-window-note">
-              {t('Pick a keycode to assign it to this key')}
-            </p>
-          )}
         </div>
       )}
-    </div>
+    </>
   );
 }
 

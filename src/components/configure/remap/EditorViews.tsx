@@ -5,14 +5,19 @@ import { PointingSettingsMode } from '../pointing/PointingSettings';
 // Screens of the editor, shared by the classic tabs and the new rail.
 export type ConfigureView =
   | 'keymap'
+  | 'macros'
+  | 'layers'
   | 'combos'
   | 'knobs'
-  | PointingSettingsMode;
+  | PointingSettingsMode
+  | 'leds';
 
 // Touchpad / Mouse Layer are always listed; each screen checks whether the
 // firmware supports them and offers a preview otherwise.
 export const EDITOR_VIEWS: ConfigureView[] = [
   'keymap',
+  'macros',
+  'layers',
   'touchpad',
   'autoMouse',
   'timing',
@@ -54,6 +59,8 @@ export function editorViewLabel(view: ConfigureView): string {
     combos: t('Combos'),
     knobs: t('Knobs'),
     leds: t('Layer LED colors'),
+    macros: t('Macros'),
+    layers: t('Layers'),
   };
   return labels[view];
 }
@@ -73,6 +80,8 @@ export function EditorViewIcon(props: {
     knobs:
       'M10 4a6 6 0 110 12 6 6 0 010-12zM10 4v4M14.5 5.5l1.5-1.5M5.5 5.5L4 4',
     leds: 'M10 3v2M10 15v2M3 10h2M15 10h2M5 5l1.5 1.5M13.5 13.5L15 15M5 15l1.5-1.5M13.5 6.5L15 5M10 7a3 3 0 110 6 3 3 0 010-6z',
+    macros: 'M4 4h5v5H4zM11 11h5v5h-5zM9 6.5h4.5V11',
+    layers: 'M4 4h5v5H4zM11 11h5v5h-5zM9 6.5h4.5V11',
   };
   return (
     <svg

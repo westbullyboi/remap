@@ -252,10 +252,10 @@ export default class Keycap extends React.Component<
 
     // TODO: refactor the label position should be organized in genKey()
     const km: IKeymap = dstKey ? dstKey.keymap : orgKey.keymap;
-    const holdLabel = buildHoldKeyLabel(km, km.isAny);
+    const holdLabel = km ? buildHoldKeyLabel(km, km.isAny) : '';
     let modifierLabel =
-      holdLabel === ''
-        ? buildModLabel(km.modifiers || null, km.direction!)
+      holdLabel === '' && km && km.modifiers
+        ? buildModLabel(km.modifiers, km.direction!)
         : '';
     const modifierRightLabel = dstKey ? dstKey.metaRight : orgKey.metaRight;
     const meta = dstKey ? dstKey.meta : orgKey.meta;

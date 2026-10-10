@@ -3,6 +3,7 @@ import KeyboardList from './KeyboardList';
 import { RootState } from '../../../store/state';
 import { hidActionsThunk } from '../../../actions/hid.action';
 import { IKeyboard } from '../../../services/hid/Hid';
+import { mockIKeyboad } from '../../../services/hid/Hid.mock';
 
 const mapStateToProps = (state: RootState) => {
   return {
@@ -15,6 +16,9 @@ const mapDispatchToProps = (_dispatch: any) => {
   return {
     onClickItem: (keyboard: IKeyboard) => {
       _dispatch(hidActionsThunk.connectKeyboard(keyboard));
+    },
+    onClickMockKeyboard: () => {
+      _dispatch(hidActionsThunk.connectKeyboard(mockIKeyboad));
     },
     onClickConnectAnotherKeyboard: () => {
       _dispatch(hidActionsThunk.connectAnotherKeyboard());

@@ -5,6 +5,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, ThreeEvent, useFrame, useThree } from '@react-three/fiber';
 import { RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
+import { Suspense } from 'react';
+import { VanillaDither } from './VanillaDither';
+
 import {
   Bounds,
   CameraView,
@@ -62,18 +65,88 @@ export default function Keymap3D(props: Keymap3DProps) {
         focusPos={props.focusPos}
         side={props.side}
       />
-      {props.plates.map((plate, i) => (
-        <PlateMesh key={i} plate={plate} />
-      ))}
-      {props.keys.map((k) => (
-        <Keycap3D
-          key={k.key.model.location}
-          data={k}
-          selected={!!k.key.model.pos && k.key.model.pos === props.selectedPos}
-          onPick={props.onPick}
-        />
-      ))}
+      <AnimatedKeyboard>
+        {props.plates.map((plate, i) => (
+          <PlateMesh key={i} plate={plate} />
+        ))}
+        <TouchpadMesh keys={props.keys} />
+        {props.keys.map((k) => (
+          <Keycap3D
+            key={k.key.model.location}
+            data={k}
+            selected={
+              !!k.key.model.pos && k.key.model.pos === props.selectedPos
+            }
+            onPick={props.onPick}
+          />
+        ))}
+      </AnimatedKeyboard>
+      <VanillaDither />
     </Canvas>
+  );
+}
+
+function AnimatedKeyboard({ children }: { children: React.ReactNode }) {
+  const group = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    if (group.current) {
+      const t = clock.getElapsedTime();
+      group.current.rotation.y = Math.sin(t * 0.3) * 0.08;
+      group.current.rotation.x = Math.sin(t * 0.4) * 0.03;
+      group.current.position.y = Math.sin(t * 0.5) * 0.15;
+    }
+  });
+  return <group ref={group}>{children}</group>;
+}
+
+function TouchpadMesh(props: { keys: Keymap3DKey[] }) {
+  // Find keys on the right half (x > 8)
+  const rightKeys = props.keys.filter((k) => k.key.x > 8);
+  if (rightKeys.length === 0) return null;
+
+  // The user says: "タッチパッドの位置は右キーボードの下部に存在する左端キーの上にタッチパッドが存在するのが正しい"
+  // Let's find the leftmost key (minX).
+  const minX = Math.min(...rightKeys.map((k) => k.key.x));
+  const minXKeys = rightKeys.filter((k) => Math.abs(k.key.x - minX) < 0.1);
+  // Among them, find the one at the bottom (maxZ).
+  const maxZ = Math.max(...minXKeys.map((k) => k.key.z));
+  const targetKey = minXKeys.find((k) => Math.abs(k.key.z - maxZ) < 0.1);
+
+  if (!targetKey) return null;
+
+  // Trackpad dimensions, slightly larger than a 1u keycap
+  const w = 1.3;
+  const d = 1.3;
+
+  // Center exactly on the target key
+  const cx = targetKey.key.x;
+  const cz = targetKey.key.z;
+
+  return (
+    <group>
+      {/* Base that covers the keycap completely */}
+      <RoundedBox
+        args={[w, 0.55, d]}
+        radius={0.1}
+        smoothness={4}
+        position={[cx, 0.275, cz]}
+      >
+        <meshStandardMaterial
+          color="#888888"
+          roughness={0.65}
+          metalness={0.1}
+        />
+      </RoundedBox>
+      {/* Touchpad surface */}
+      <RoundedBox
+        args={[w - 0.2, 0.04, d - 0.2]}
+        radius={0.05}
+        smoothness={2}
+        position={[cx, 0.57, cz]}
+      >
+        <meshStandardMaterial color="#aaaaaa" roughness={0.9} />
+      </RoundedBox>
+    </group>
   );
 }
 
@@ -134,7 +207,7 @@ function PlateMesh(props: { plate: Plate }) {
         (plate.minZ + plate.maxZ) / 2,
       ]}
     >
-      <meshStandardMaterial color="#2b2d33" roughness={0.65} metalness={0.1} />
+      <meshStandardMaterial color="#888888" roughness={0.65} metalness={0.1} />
     </RoundedBox>
   );
 }
@@ -195,7 +268,7 @@ function Keycap3D(props: {
               ]}
             />
             <meshStandardMaterial
-              color={props.selected ? '#18191d' : '#3a3c42'}
+              color={props.selected ? '#18191d' : '#454952'}
               roughness={0.5}
             />
           </mesh>
@@ -212,20 +285,28 @@ function Keycap3D(props: {
         <mesh
           position={[0, CAP_HEIGHT + 0.002, 0]}
           rotation={[-Math.PI / 2, 0, 0]}
+          layers={1}
         >
           <planeGeometry args={[w * 0.92, d * 0.92]} />
           <meshBasicMaterial map={texture} transparent toneMapped={false} />
         </mesh>
         {props.selected && (
-          <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <mesh
+            position={[0, 0.01, 0]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            layers={1}
+          >
             <planeGeometry args={[w + 0.16, d + 0.16]} />
-            <meshBasicMaterial color="#5b8cff" transparent opacity={0.55} />
+            <meshBasicMaterial color="#ffffff" transparent opacity={0.65} />
           </mesh>
         )}
         {changed && (
-          <mesh position={[w / 2 - 0.12, CAP_HEIGHT + 0.01, -d / 2 + 0.12]}>
-            <sphereGeometry args={[0.06, 16, 16]} />
-            <meshBasicMaterial color="#3d6fd6" />
+          <mesh
+            position={[w / 2 - 0.12, CAP_HEIGHT + 0.01, -d / 2 + 0.12]}
+            layers={1}
+          >
+            <sphereGeometry args={[0.08, 16, 16]} />
+            <meshBasicMaterial color="#ffffff" />
           </mesh>
         )}
       </group>

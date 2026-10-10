@@ -55,6 +55,17 @@ export default class KeyboardList extends React.Component<
               </div>
             );
           })}
+
+          <div
+            key={-2}
+            className="keyboard-item"
+            onClick={this.props.onClickMockKeyboard!.bind(this)}
+          >
+            <h3 className="another">Test Mock Keyboard</h3>
+            <div className="device-ids">
+              Click here to test UI without real hardware
+            </div>
+          </div>
           <div
             key={-1}
             className="keyboard-item"

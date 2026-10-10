@@ -1,409 +1,542 @@
-/* eslint-disable no-undef */
 import React, { useEffect, useRef, useState } from 'react';
+import { useDispatch, useSelector, useStore } from 'react-redux';
 import { t } from 'i18next';
-import { Menu, MenuItem } from '@mui/material';
+import Keymap3DView from '../keymap3d/Keymap3DView';
 import './EditorShell.scss';
-import './KeyConfigTheme.scss';
-import './SettingsTheme.scss';
-import { IKeyboard } from '../../../services/hid/Hid';
-import { hexadecimal } from '../../../utils/StringUtils';
-import { APPLICATION_NAME } from '../../../utils/Brand';
+import { RootState } from '../../../store/state';
+import { AppActions, NotificationActions } from '../../../actions/actions';
 import { setUiLayout } from '../../../services/ui/UiLayout';
 import {
   ConfigureView,
-  EDITOR_VIEWS,
-  EditorViewIcon,
-  editorViewLabel,
-  KEYBOARD_SCALES,
-  loadKeyboardScale,
   openEditorView,
-  saveKeyboardScale,
   useEditorView,
 } from '../remap/EditorViews';
-import { useAccount } from '../hooks/useAccount';
-import { useKeyConfigDisplay } from '../hooks/useKeyConfigDisplay';
 import { useKeyboardConnection } from '../hooks/useKeyboardConnection';
 import { useLayerSelection } from '../hooks/useLayerSelection';
 import { useWriteToKeyboard } from '../hooks/useWriteToKeyboard';
-import { Desc, EditMode, KnobTab, SplitBanner } from '../remap/Remap';
-import EditorSidebar from '../sidebar/EditorSidebar.container';
-import KeyInspector from '../inspector/KeyInspector.container';
-import Keycodes from '../keycodes/Keycodes.container';
-import Keymap3DView from '../keymap3d/Keymap3DView';
+import { Remaps, RemapsHistory } from '../../../services/history/RemapsHistory';
 import {
-  KeyboardViewMode,
-  loadKeyboardViewMode,
-  saveKeyboardViewMode,
-} from '../keymap3d/KeyboardViewMode';
-import Combos from '../combos/Combos';
-import PointingSettings from '../pointing/PointingSettings.container';
-import HeaderActions from '../header/HeaderActions';
-import InfoDialog from '../info/InfoDialog.container';
-import KeymapSafetyDialog from '../safety/KeymapSafetyDialog';
-import { FlashBackupBanner } from '../firmware/FlashBackupBanner';
-import { firmwareFlasherStore } from '../firmware/firmwareFlasherStore';
-import { SplitFirmwareLine } from '../split/SplitFirmwareStatus';
-import ProfileIcon from '../../common/auth/ProfileIcon.container';
-import LicenseLink from '../../common/license/LicenseLink';
+  buildKeymapFile,
+  keymapFileToRemaps,
+  parseKeymapFile,
+} from '../../../services/keymapfile/KeymapFile';
+import {
+  replaceLayerMeta,
+  useLayerMeta,
+} from '../../../services/layers/LayerMeta';
 
-// The redesigned editor (UI rebuild P3): an icon rail with the screens, a
-// side panel with the keyboard and its layers, and the selected screen.
-// Shown instead of the header and Remap when the new layout is chosen.
+type BigTabId = 'keys' | 'pointing' | 'lighting' | 'cf';
+
+const history = new RemapsHistory();
+
 export default function EditorShell() {
-  // Any part of the editor may open a screen (see openEditorView).
   const view = useEditorView();
-  const layers = useLayerSelection();
-  const { hoverKey } = useKeyConfigDisplay();
 
-  // An opened keyboard starts on Key Config.
-  useEffect(() => openEditorView('keymap'), []);
+  const getBigTab = (v: ConfigureView): BigTabId => {
+    if (['keymap', 'macros', 'combos', 'layers'].includes(v)) return 'keys';
+    if (['touchpad', 'autoMouse', 'timing', 'knobs'].includes(v))
+      return 'pointing';
+    if (['leds'].includes(v)) return 'lighting';
+    return 'keys';
+  };
 
-  // Mouse Layer's "edit this layer".
-  const editLayer = (layer: number) => {
-    layers.select(layer);
-    openEditorView('keymap');
+  const bigTab = getBigTab(view);
+
+  const goTab = (tab: BigTabId) => {
+    if (tab === 'keys') openEditorView('keymap');
+    else if (tab === 'pointing') openEditorView('touchpad');
+    else if (tab === 'lighting') openEditorView('leds');
   };
 
   return (
-    <div className="mx-shell">
-      <ShellRail view={view} onView={openEditorView} />
-      <ShellSidePanel />
-      <main className="mx-shell-main">
-        <ShellTopBar view={view} />
-        <SplitBanner />
-        <FlashBackupBanner />
-        {view === 'keymap' ? (
-          <KeyConfigView />
-        ) : (
-          <section className="mx-shell-card mx-shell-settings">
-            {view === 'combos' ? (
-              <Combos />
-            ) : view === 'knobs' ? (
-              <KnobTab />
-            ) : (
-              <PointingSettings mode={view} onEditLayer={editLayer} />
-            )}
-          </section>
-        )}
-      </main>
-      {view === 'keymap' && <Desc value={hoverKey} />}
-    </div>
-  );
-}
+    <div className="mx-root">
+      <div className="mx-panel">
+        <div className="mx-top mx-fade">
+          <header className="mx-hdr">
+            <ShellHeaderLeft view={view} bigTab={bigTab} />
+            <ShellHeaderRight view={view} bigTab={bigTab} />
+          </header>
 
-function ShellRail(props: {
-  view: ConfigureView;
-  // eslint-disable-next-line no-unused-vars
-  onView: (view: ConfigureView) => void;
-}) {
-  const { keyboard } = useKeyboardConnection();
-  return (
-    <div className="mx-shell-rail-case">
-      <nav className="mx-shell-rail" aria-label={t('Screens')}>
-        <span className="mx-shell-brand" aria-label={APPLICATION_NAME}>
-          M
-        </span>
-        <span className="mx-shell-rail-divider" aria-hidden="true" />
-        {EDITOR_VIEWS.map((v) => (
-          <button
-            key={v}
-            type="button"
-            className="mx-shell-rail-button"
-            aria-label={editorViewLabel(v)}
-            aria-current={props.view === v ? 'page' : undefined}
-            title={editorViewLabel(v)}
-            onClick={() => props.onView(v)}
-          >
-            <EditorViewIcon view={v} />
-          </button>
-        ))}
-      </nav>
-      <button
-        type="button"
-        className="mx-shell-firmware"
-        title={t('Write firmware')}
-        onClick={() => firmwareFlasherStore.open(keyboard || null)}
-      >
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M6 3h8v14H6zM9 6h2M10 9v5M8 12l2 2 2-2" />
-        </svg>
-        <span>{t('Firmware')}</span>
-      </button>
-    </div>
-  );
-}
-
-function ShellSidePanel() {
-  const { keyboard } = useKeyboardConnection();
-  return (
-    <aside className="mx-shell-side" aria-label={t('Keyboard')}>
-      <DeviceSwitcher />
-      <EditorSidebar embedded />
-      <div className="mx-shell-side-footer">
-        <div className="mx-shell-connection">
-          <span className="mx-shell-dot" aria-hidden="true" />
-          <span>USB · {t('Connected')}</span>
-        </div>
-        <SplitFirmwareLine keyboard={keyboard || null} />
-        <button
-          type="button"
-          className="mx-shell-link"
-          onClick={() => setUiLayout('classic')}
-        >
-          {t('Back to the classic layout')}
-        </button>
-        <LicenseLink />
-      </div>
-    </aside>
-  );
-}
-
-// Name of the open keyboard; opens the menu to switch to another one.
-function DeviceSwitcher() {
-  const connection = useKeyboardConnection();
-  const { keyboard, keyboards, info } = connection;
-  const anchorRef = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
-  if (!keyboard || !info) return null;
-
-  const choose = (kbd: IKeyboard) => {
-    setOpen(false);
-    connection.open(kbd);
-  };
-  const another = () => {
-    setOpen(false);
-    connection.openAnother();
-  };
-
-  return (
-    <div className="mx-shell-device">
-      <button
-        ref={anchorRef}
-        type="button"
-        className="mx-shell-device-button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
-      >
-        <span className="mx-shell-device-name">{info.productName}</span>
-        <span className="mx-shell-device-ids">
-          {hexadecimal(info.vendorId, 4)} : {hexadecimal(info.productId, 4)}
-        </span>
-      </button>
-      <button
-        type="button"
-        className="mx-shell-icon-button"
-        aria-label={t('Keyboard information')}
-        title={t('Keyboard information')}
-        onClick={() => setInfoOpen(true)}
-      >
-        i
-      </button>
-      <Menu
-        anchorEl={anchorRef.current}
-        open={open}
-        onClose={() => setOpen(false)}
-      >
-        {keyboards.map((kbd, index) => {
-          const item = kbd.getInformation();
-          return (
-            <MenuItem
-              key={index}
-              disabled={kbd === keyboard}
-              onClick={() => choose(kbd)}
+          <nav className="mx-big" aria-label="セクション">
+            <button
+              className={bigTab === 'keys' ? 'cur' : ''}
+              aria-current={bigTab === 'keys'}
+              onClick={() => goTab('keys')}
             >
-              {item.productName} ({hexadecimal(item.vendorId, 4)} /{' '}
-              {hexadecimal(item.productId, 4)})
-            </MenuItem>
-          );
-        })}
-        <MenuItem onClick={another}>{t('+ KEYBOARD')}</MenuItem>
-      </Menu>
-      <InfoDialog open={infoOpen} onClose={() => setInfoOpen(false)} />
+              Keys
+            </button>
+            <button
+              className={bigTab === 'pointing' ? 'cur' : ''}
+              aria-current={bigTab === 'pointing'}
+              onClick={() => goTab('pointing')}
+            >
+              Pointing
+            </button>
+            <button
+              className={bigTab === 'lighting' ? 'cur' : ''}
+              aria-current={bigTab === 'lighting'}
+              onClick={() => goTab('lighting')}
+            >
+              Lighting
+            </button>
+          </nav>
+
+          <ShellSubNav view={view} bigTab={bigTab} />
+          <div className="mx-rule" style={{ marginTop: 0 }} />
+        </div>
+
+        <main
+          className="mx-main"
+          style={{
+            marginLeft: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            WebkitMaskImage: 'none',
+            maskImage: 'none',
+            paddingBottom: 'clamp(8px, 1.4vh, 14px)',
+          }}
+        >
+          <section
+            className="mx-card"
+            aria-label="キーボード"
+            style={{
+              flex: '1 1 auto',
+              minHeight: 0,
+              display: 'flex',
+              padding: 'clamp(6px, 1.2vh, 12px)',
+              animation:
+                'mx-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.2s backwards',
+            }}
+          >
+            <div className="mx-stage" style={{ flex: 1 }}>
+              <Keymap3DView onUnavailable={() => setUiLayout('classic')} />
+            </div>
+          </section>
+        </main>
+
+        <footer className="mx-foot">
+          <div className="mx-hgrp">
+            <button
+              className="mx-btn mx-press"
+              onClick={() => setUiLayout('classic')}
+            >
+              Back to classic layout
+            </button>
+          </div>
+          <div className="mx-hgrp">
+            <ApplyButton />
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
 
-function ShellTopBar(props: { view: ConfigureView }) {
+function ShellHeaderLeft({
+  view,
+  bigTab,
+}: {
+  view: ConfigureView;
+  bigTab: BigTabId;
+}) {
+  const connection = useKeyboardConnection();
+  const { keyboard, info } = connection;
+  const devName = info ? info.productName : 'No Device';
+  const isConnected = !!keyboard;
+
+  return (
+    <div className="mx-hgrp">
+      <div style={{ position: 'relative' }}>
+        <button className="mx-hbtn mx-press">
+          <span className="mx-dot32">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="2.5" y="6" width="19" height="12" rx="2.5"></rect>
+              <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"></path>
+            </svg>
+          </span>
+          {devName}
+        </button>
+      </div>
+      <span className="mx-chip opt">
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            background: isConnected ? '#1f8a55' : '#888',
+          }}
+        />
+        {isConnected ? 'Connected' : 'Disconnected'}
+      </span>
+    </div>
+  );
+}
+
+function ShellHeaderRight({
+  view,
+  bigTab,
+}: {
+  view: ConfigureView;
+  bigTab: BigTabId;
+}) {
   const layer = useLayerSelection();
-  const account = useAccount();
-  return (
-    <header className="mx-shell-topbar">
-      <div className="mx-shell-title">
-        <h1>{editorViewLabel(props.view)}</h1>
-        {props.view === 'keymap' && (
-          <span className="mx-shell-layer-pill">
-            <span
-              className="mx-shell-layer-dot"
-              style={{ backgroundColor: layer.color }}
-              aria-hidden="true"
-            />
-            {layer.name} · L{layer.selected}
-          </span>
-        )}
-      </div>
-      <div className="mx-shell-topbar-actions">
-        <HeaderActions />
-        {account.available && <ProfileIcon logout={account.logout} />}
-        <ApplyButton />
-      </div>
-    </header>
-  );
-}
+  const store = useStore<RootState>();
+  const dispatch = useDispatch<any>();
+  const keyboard = useSelector((s: RootState) => s.entities.keyboard);
+  const remaps = useSelector((s: RootState) => s.app.remaps);
+  const remapsBaseline = useSelector((s: RootState) => s.app.remapsBaseline);
+  const info = keyboard?.getInformation();
+  const layerMeta = useLayerMeta(info);
+  const [, forceRender] = useState(0);
+  const importRef = useRef<HTMLInputElement>(null);
 
-// Writes the pending changes to the keyboard ("Flash" in the classic
-// layout), after the same keymap check.
-function ApplyButton() {
-  const { pending, writing, issues, write, writeAnyway, dismissIssues } =
-    useWriteToKeyboard();
+  useEffect(() => {
+    history.reset(store.getState().app.remaps as Remaps);
+    forceRender((n) => n + 1);
+  }, [keyboard, remapsBaseline]);
 
-  return (
-    <React.Fragment>
-      <button
-        type="button"
-        className="mx-shell-apply"
-        disabled={pending === 0 || writing}
-        onClick={write}
-      >
-        <span>{writing ? t('Writing...') : t('Write to keyboard')}</span>
-        {pending > 0 && (
-          <span
-            className="mx-shell-apply-count"
-            title={t('Changes not yet flashed')}
-          >
-            {pending}
-          </span>
-        )}
-      </button>
-      <KeymapSafetyDialog
-        open={issues !== null}
-        issues={issues || []}
-        onCancel={dismissIssues}
-        onProceed={writeAnyway}
-      />
-    </React.Fragment>
-  );
-}
+  useEffect(() => {
+    history.observe(remaps as Remaps);
+    forceRender((n) => n + 1);
+  }, [remaps]);
 
-function KeyConfigView() {
-  const { keyboardWidth, macroKey } = useKeyConfigDisplay();
-  const [scale, setScale] = useState(loadKeyboardScale);
-  const [mode, setMode] = useState<KeyboardViewMode>(() =>
-    loadKeyboardViewMode()
-  );
-  const areaRef = useRef<HTMLDivElement>(null);
-  const zoom = useKeyboardZoom(areaRef, keyboardWidth, scale);
-  // Horizontal room kept around the keyboard (same as the classic layout).
-  const minWidth = keyboardWidth ? keyboardWidth + 64 : 0;
-  const changeMode = (next: KeyboardViewMode) => {
-    saveKeyboardViewMode(next);
-    setMode(next);
+  const restore = (snapshot: Remaps | null) => {
+    if (snapshot && snapshot.length === store.getState().app.remaps.length) {
+      dispatch(AppActions.remapsSetKeys(snapshot));
+    }
   };
 
-  if (mode === '3d' && !macroKey) {
+  const onExport = () => {
+    if (!info) return;
+    const state = store.getState();
+    const file = buildKeymapFile(
+      {
+        name: info.productName,
+        vendorId: info.vendorId,
+        productId: info.productId,
+      },
+      state.entities.device.keymaps,
+      state.app.remaps,
+      layerMeta
+    );
+    const blob = new Blob([JSON.stringify(file, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${info.productName || 'keymap'}.matrix-keymap.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onImport = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const state = store.getState();
+      const parsed = parseKeymapFile(await file.text());
+      const result = keymapFileToRemaps(
+        parsed,
+        state.entities.device.keymaps,
+        state.app.labelLang,
+        state.entities.keyboardDefinition?.customKeycodes
+      );
+      dispatch(AppActions.remapsSetKeys(result.remaps));
+      if (parsed.layerMeta) replaceLayerMeta(info, parsed.layerMeta);
+      dispatch(
+        NotificationActions.addSuccess(
+          `${t('Imported')}: ${result.changed} ${t('changes')}` +
+            (result.skipped ? ` / ${result.skipped} ${t('skipped')}` : '') +
+            ` — ${t('Press Flash to write them to the keyboard.')}`
+        )
+      );
+    } catch (e: any) {
+      dispatch(NotificationActions.addError(e?.message || String(e)));
+    } finally {
+      if (importRef.current) importRef.current.value = '';
+    }
+  };
+
+  const undoOff = !history.canUndo();
+  const redoOff = !history.canRedo();
+
+  return (
+    <div className="mx-hgrp">
+      <div style={{ position: 'relative' }}>
+        <button
+          className="mx-hbtn mx-press"
+          style={{ padding: '0 6px 0 16px' }}
+        >
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              background: layer.color || '#fff',
+            }}
+          ></span>
+          Layer {layer.selected} {layer.name ? `· ${layer.name}` : ''}
+          <span className="mx-dot32">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M6 9l6 6 6-6"></path>
+            </svg>
+          </span>
+        </button>
+      </div>
+
+      {bigTab === 'keys' && (
+        <>
+          <button
+            className={`mx-ib mx-press ${undoOff ? 'off' : ''}`}
+            aria-label={t('Undo')}
+            title={t('Undo')}
+            disabled={undoOff}
+            onClick={() => restore(history.undo())}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 14L4 9l5-5"></path>
+              <path d="M4 9h10a6 6 0 0 1 0 12h-3"></path>
+            </svg>
+          </button>
+          <button
+            className={`mx-ib mx-press ${redoOff ? 'off' : ''}`}
+            aria-label={t('Redo')}
+            title={t('Redo')}
+            disabled={redoOff}
+            onClick={() => restore(history.redo())}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M15 14l5-5-5-5"></path>
+              <path d="M20 9H10a6 6 0 0 0 0 12h3"></path>
+            </svg>
+          </button>
+        </>
+      )}
+
+      <label
+        className="mx-hbtn mx-press"
+        title={t('Import')}
+        style={{ position: 'relative', padding: '0 16px 0 14px' }}
+      >
+        <svg
+          width="17"
+          height="17"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path>
+        </svg>
+        <span className="lbl">{t('Import')}</span>
+        <input
+          ref={importRef}
+          type="file"
+          accept=".json"
+          aria-label={t('Import')}
+          onChange={(e) => onImport(e.target.files?.[0])}
+          style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }}
+        />
+      </label>
+
+      <button
+        className="mx-hbtn mx-press"
+        title={t('Export')}
+        onClick={onExport}
+        style={{ padding: '0 16px 0 14px' }}
+      >
+        <svg
+          width="17"
+          height="17"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M12 16V4M7 9l5-5 5 5M5 20h14"></path>
+        </svg>
+        <span className="lbl">{t('Export')}</span>
+      </button>
+
+      <button
+        className="mx-hbtn mx-press"
+        title={t('Firmware')}
+        style={{ padding: '0 16px 0 14px' }}
+      >
+        <svg
+          width="17"
+          height="17"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect x="7" y="7" width="10" height="10" rx="1.5"></rect>
+          <path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"></path>
+        </svg>
+        <span className="lbl">Firmware</span>
+      </button>
+    </div>
+  );
+}
+
+function ShellSubNav({
+  view,
+  bigTab,
+}: {
+  view: ConfigureView;
+  bigTab: BigTabId;
+}) {
+  if (bigTab === 'keys') {
     return (
-      <section className="mx-shell-card mx-shell-keyboard mx-shell-keyboard-3d">
-        <div className="mx-shell-keyboard-tools">
-          <KeyboardViewToggle mode={mode} onChange={changeMode} />
-        </div>
-        <Keymap3DView onUnavailable={() => setMode('2d')} />
-      </section>
+      <nav className="mx-subnav" aria-label="Keys">
+        <button
+          className={view === 'keymap' ? 'cur' : ''}
+          aria-current={view === 'keymap'}
+          onClick={() => openEditorView('keymap')}
+        >
+          Keymap
+        </button>
+        <button
+          className={view === 'macros' ? 'cur' : ''}
+          aria-current={view === 'macros'}
+          onClick={() => openEditorView('macros')}
+        >
+          Macros
+        </button>
+        <button
+          className={view === 'combos' ? 'cur' : ''}
+          aria-current={view === 'combos'}
+          onClick={() => openEditorView('combos')}
+        >
+          Combos
+        </button>
+        <button
+          className={view === 'layers' ? 'cur' : ''}
+          aria-current={view === 'layers'}
+          onClick={() => openEditorView('layers')}
+        >
+          Layers
+        </button>
+      </nav>
     );
   }
-
-  return (
-    <React.Fragment>
-      <section className="mx-shell-card mx-shell-keyboard" ref={areaRef}>
-        {!macroKey && (
-          <div className="mx-shell-keyboard-tools">
-            <KeyboardViewToggle mode={mode} onChange={changeMode} />
-            <div
-              className="mx-shell-segment"
-              role="group"
-              aria-label={t('Keyboard size')}
-            >
-              {KEYBOARD_SCALES.map((s) => (
-                <button
-                  key={s.value}
-                  type="button"
-                  aria-pressed={scale === s.value}
-                  title={`${t('Keyboard size')}: ${Math.round(s.value * 100)}%`}
-                  onClick={() => {
-                    saveKeyboardScale(s.value);
-                    setScale(s.value);
-                  }}
-                >
-                  {t(`keyboardScale.${s.label}`)}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        <div className="keyboard-wrapper" style={{ minWidth, zoom }}>
-          <EditMode mode={macroKey ? 'macro' : 'keymap'} />
-        </div>
-      </section>
-      <div className="mx-shell-keycodes">
-        <section className="mx-shell-card mx-shell-inspector">
-          <KeyInspector />
-        </section>
-        <section className="mx-shell-card mx-shell-palette">
-          <Keycodes />
-        </section>
-      </div>
-    </React.Fragment>
-  );
-}
-
-// Switches Key Config between the 3D and the 2D keyboard.
-function KeyboardViewToggle(props: {
-  mode: KeyboardViewMode;
-  // eslint-disable-next-line no-unused-vars
-  onChange: (mode: KeyboardViewMode) => void;
-}) {
-  return (
-    <div
-      className="mx-shell-segment"
-      role="group"
-      aria-label={t('Keyboard view')}
-    >
-      {(['3d', '2d'] as const).map((m) => (
+  if (bigTab === 'pointing') {
+    return (
+      <nav className="mx-subnav" aria-label="Pointing">
         <button
-          key={m}
-          type="button"
-          aria-pressed={props.mode === m}
-          onClick={() => props.onChange(m)}
+          className={view === 'touchpad' ? 'cur' : ''}
+          aria-current={view === 'touchpad'}
+          onClick={() => openEditorView('touchpad')}
         >
-          {m.toUpperCase()}
+          Touchpad
         </button>
-      ))}
-    </div>
-  );
+        <button
+          className={view === 'autoMouse' ? 'cur' : ''}
+          aria-current={view === 'autoMouse'}
+          onClick={() => openEditorView('autoMouse')}
+        >
+          Mouse layer
+        </button>
+        <button
+          className={view === 'timing' ? 'cur' : ''}
+          aria-current={view === 'timing'}
+          onClick={() => openEditorView('timing')}
+        >
+          Timing
+        </button>
+        <button
+          className={view === 'knobs' ? 'cur' : ''}
+          aria-current={view === 'knobs'}
+          onClick={() => openEditorView('knobs')}
+        >
+          Knobs
+        </button>
+      </nav>
+    );
+  }
+  if (bigTab === 'lighting') {
+    return (
+      <nav className="mx-subnav" aria-label="Lighting">
+        <button
+          className={view === 'leds' ? 'cur' : ''}
+          aria-current={view === 'leds'}
+          onClick={() => openEditorView('leds')}
+        >
+          Effects
+        </button>
+      </nav>
+    );
+  }
+  return <nav className="mx-subnav" />;
 }
 
-// Scale of the keyboard so that it fits the card (up to the chosen size).
-function useKeyboardZoom(
-  ref: React.RefObject<HTMLElement>,
-  keyboardWidth: number,
-  scale: number
-): number {
-  const [zoom, setZoom] = useState(scale);
-  useEffect(() => {
-    const el = ref.current;
-    const update = () => {
-      if (!el || !keyboardWidth) {
-        setZoom(scale);
-        return;
-      }
-      const available = el.clientWidth - 8;
-      setZoom(Math.max(0.3, Math.min(scale, available / (keyboardWidth + 64))));
-    };
-    update();
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref, keyboardWidth, scale]);
-  return zoom;
+function ApplyButton() {
+  const { pending, writing, write } = useWriteToKeyboard();
+  return (
+    <button
+      className={`mx-primary mx-press ${pending === 0 || writing ? 'idle' : ''}`}
+      disabled={pending === 0 || writing}
+      onClick={write}
+    >
+      {writing ? t('Writing...') : t('Write to keyboard')}
+      {pending > 0 && (
+        <span
+          style={{
+            background: '#fff',
+            color: '#0e0e10',
+            padding: '2px 6px',
+            borderRadius: 10,
+            fontSize: 12,
+            marginLeft: 8,
+          }}
+        >
+          {pending}
+        </span>
+      )}
+    </button>
+  );
 }

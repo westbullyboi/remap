@@ -208,7 +208,7 @@ export default class Remap extends React.Component<RemapPropType, OwnState> {
                   <KnobTab />
                 ) : (
                   <PointingSettings
-                    mode={view}
+                    mode={view as any}
                     onEditLayer={this.onEditLayer.bind(this)}
                   />
                 )}

@@ -138,5 +138,9 @@
     ]
   },
   "packageManager": "yarn@4.2.2",
-  "type": "module"
+  "type": "module",
+  "resolutions": {
+    "react-reconciler": "0.29.2",
+    "scheduler": "0.23.2"
+  }
 }

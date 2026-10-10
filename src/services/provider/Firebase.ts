@@ -1,3 +1,4 @@
+import mockDef from '../../../keyboards/matrix-split42/matrix-split42.json';
 import firebase from 'firebase/app';
 import 'firebase/firestore';
 import 'firebase/auth';

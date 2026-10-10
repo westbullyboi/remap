@@ -15,9 +15,9 @@ import {
 import { MOD_LEFT } from './Constraints';
 
 export const IDeviceInformationMock = {
-  vendorId: 777,
-  productId: 1,
-  productName: 'Keybooard Mock',
+  vendorId: 0xfeed,
+  productId: 0x0000,
+  productName: 'Matrix Split 42',
 };
 
 export const IHidMock: IHid = {
@@ -42,7 +42,7 @@ export const IHidMock: IHid = {
 
 export const mockIKeyboad: IKeyboard = {
   getDevice: () => {
-    return new HIDDevice();
+    return {} as HIDDevice;
   },
   getHid: () => {
     return IHidMock;
@@ -56,7 +56,7 @@ export const mockIKeyboad: IKeyboard = {
     });
   },
   isOpened: () => {
-    return true;
+    return false;
   },
   isSameDevice: (_target) => {
     return true;
@@ -281,7 +281,7 @@ export const mockIKeyboad: IKeyboard = {
   },
   fetchViaProtocolVersion(): Promise<IFetchViaProtocolVersionResult> {
     return new Promise((resolve) => {
-      resolve({ success: true, viaProtocolVersion: 0x0a });
+      resolve({ success: true, viaProtocolVersion: 0x0c });
     });
   },
   fetchCustomValue: (_valueId: number, _size: 1 | 2 | 4) => {
