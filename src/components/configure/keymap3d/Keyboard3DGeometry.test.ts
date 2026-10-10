@@ -9,7 +9,7 @@ import {
   keyBounds,
   overviewView,
   plates,
-  touchpadPlacement,
+  layout3D,
   unionBounds,
 } from './Keyboard3DGeometry';
 
@@ -106,16 +106,37 @@ describe('Keyboard3DGeometry', () => {
     expect(plates(keysOf(keymap)).length).toEqual(1);
   });
 
-  test('the touchpad keeps its place on both keyboards', () => {
-    // Matrix Split 42: the inner thumb key of the right half.
-    expect(
-      touchpadPlacement(keysOf(definition.layouts.keymap))?.key.model.pos
-    ).toEqual('7,0');
-    // Dilemma: the turned thumb keys are left of x = 8, so the bottom key
-    // of the inner main column.
-    expect(
-      touchpadPlacement(keysOf(dilemma.layouts.keymap))?.key.model.pos
-    ).toEqual('6,0');
-    expect(touchpadPlacement(keysOf([['0,0', '0,1']]))).toBeNull();
+  const overlaps = (a: any, b: any) =>
+    a.minX < b.maxX && b.minX < a.maxX && a.minZ < b.maxZ && b.minZ < a.maxZ;
+
+  test.each([
+    ['Dilemma', dilemma.layouts.keymap],
+    ['Matrix Split 42', definition.layouts.keymap],
+  ])('the %s touchpad is inside the right half, on no key', (_, keymap) => {
+    const layout = layout3D(keysOf(keymap), true);
+    const pad = layout.touchpad!;
+    expect(pad).not.toBeNull();
+    const [left, right] = layout.plates;
+    // left of the right half's main keys, beside the three main rows
+    const top = Math.min(...right.keys.map((k) => k.z - k.d / 2));
+    const main = right.keys.filter(
+      (k) => k.angle === 0 && k.z - k.d / 2 < top + 3
+    );
+    expect(pad.maxX).toBeLessThan(Math.min(...main.map((k) => k.x - k.w / 2)));
+    expect(pad.maxZ - pad.minZ).toBeCloseTo(3);
+    expect(pad.maxX - pad.minX).toBeCloseTo(2.4);
+    layout.keys.forEach((k) => expect(overlaps(keyBounds(k), pad)).toBe(false));
+    // the right plate holds it and stays apart from the left plate
+    expect(right.minX).toBeLessThanOrEqual(pad.minX);
+    expect(right.minX - left.maxX).toBeGreaterThan(2 * 0.28);
+    expect(layout.bounds.maxX).toEqual(right.maxX);
+  });
+
+  test('without a touchpad the layout is the plain plates', () => {
+    const keys = keysOf(dilemma.layouts.keymap);
+    const layout = layout3D(keys, false);
+    expect(layout.touchpad).toBeNull();
+    expect(layout.keys).toBe(keys);
+    expect(layout.plates.length).toEqual(2);
   });
 });

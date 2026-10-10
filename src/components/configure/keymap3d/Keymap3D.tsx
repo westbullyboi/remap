@@ -15,7 +15,7 @@ import {
   Plate,
   focusView,
   overviewView,
-  touchpadPlacement,
+  PLATE_PAD,
 } from './Keyboard3DGeometry';
 
 // The 3D keyboard of Key Config. Loaded lazily (see Keymap3DView) so that
@@ -33,8 +33,8 @@ type Keymap3DProps = {
   keys: Keymap3DKey[];
   plates: Plate[];
   bounds: Bounds;
-  // Draw the touchpad of the right half (keyboards that have one).
-  touchpad: boolean;
+  // Where the touchpad of the right half is drawn (null: none).
+  touchpad: Bounds | null;
   selectedPos: string | null;
   // The key the camera zooms to (null: the whole keyboard).
   focusPos: string | null;
@@ -72,7 +72,7 @@ export default function Keymap3D(props: Keymap3DProps) {
         {props.plates.map((plate, i) => (
           <PlateMesh key={i} plate={plate} />
         ))}
-        {props.touchpad && <TouchpadMesh keys={props.keys} />}
+        {props.touchpad && <TouchpadMesh area={props.touchpad} />}
         {props.keys.map((k) => (
           <Keycap3D
             key={k.key.model.location}
@@ -102,22 +102,20 @@ function AnimatedKeyboard({ children }: { children: React.ReactNode }) {
   return <group ref={group}>{children}</group>;
 }
 
-function TouchpadMesh(props: { keys: Keymap3DKey[] }) {
-  // "The touchpad sits on the leftmost key at the bottom of the right half."
-  const place = touchpadPlacement(props.keys.map((k) => k.key));
-  if (!place) return null;
-  const { w, d } = place;
-  const cx = place.x;
-  const cz = place.z;
-
+// The touchpad: a flat pad on the plate, lower than the keycaps.
+function TouchpadMesh(props: { area: Bounds }) {
+  const { area } = props;
+  const w = area.maxX - area.minX;
+  const d = area.maxZ - area.minZ;
+  const cx = (area.minX + area.maxX) / 2;
+  const cz = (area.minZ + area.maxZ) / 2;
   return (
     <group>
-      {/* Base that covers the keycap completely */}
       <RoundedBox
-        args={[w, 0.55, d]}
-        radius={0.1}
+        args={[w, 0.2, d]}
+        radius={0.08}
         smoothness={4}
-        position={[cx, 0.275, cz]}
+        position={[cx, 0.08, cz]}
       >
         <meshStandardMaterial
           color="#888888"
@@ -125,12 +123,12 @@ function TouchpadMesh(props: { keys: Keymap3DKey[] }) {
           metalness={0.1}
         />
       </RoundedBox>
-      {/* Touchpad surface */}
+      {/* Touch surface */}
       <RoundedBox
-        args={[w - 0.2, 0.04, d - 0.2]}
-        radius={0.05}
+        args={[w - 0.16, 0.03, d - 0.16]}
+        radius={0.04}
         smoothness={2}
-        position={[cx, 0.57, cz]}
+        position={[cx, 0.19, cz]}
       >
         <meshStandardMaterial color="#aaaaaa" roughness={0.9} />
       </RoundedBox>
@@ -181,7 +179,7 @@ function CameraRig(props: {
 
 function PlateMesh(props: { plate: Plate }) {
   const { plate } = props;
-  const pad = 0.28;
+  const pad = PLATE_PAD;
   const w = plate.maxX - plate.minX + pad * 2;
   const d = plate.maxZ - plate.minZ + pad * 2;
   return (

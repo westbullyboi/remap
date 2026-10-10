@@ -15,12 +15,7 @@ import { hexadecimal } from '../../../utils/StringUtils';
 import { Key, genKey } from '../keycodekey/KeyGen';
 import Keycodes from '../keycodes/Keycodes.container';
 import KeyInspector from '../inspector/KeyInspector.container';
-import {
-  key3D,
-  plates as toPlates,
-  unionBounds,
-  keyBounds,
-} from './Keyboard3DGeometry';
+import { key3D, layout3D } from './Keyboard3DGeometry';
 import type { Keymap3DKey } from './Keymap3D';
 import { hidActionsThunk } from '../../../actions/hid.action';
 import { KeyLabelLangs } from '../../../services/labellang/KeyLabelLangs';
@@ -134,14 +129,10 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
       .getKeymap(options)
       .keymaps.filter((m) => !m.isDecal);
   }, [keyboardKeymap, options]);
-  const geometry = useMemo(() => {
-    const keys = models.map(key3D);
-    return {
-      keys,
-      plates: toPlates(keys),
-      bounds: unionBounds(keys.map(keyBounds)),
-    };
-  }, [models]);
+  const geometry = useMemo(
+    () => layout3D(models.map(key3D), hasTouchpad),
+    [models, hasTouchpad]
+  );
 
   const layerKeymaps = keymaps[layer] || {};
   const layerRemaps = remaps[layer] || {};
@@ -235,7 +226,7 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
           keys={keys}
           plates={geometry.plates}
           bounds={geometry.bounds}
-          touchpad={hasTouchpad}
+          touchpad={geometry.touchpad}
           selectedPos={windowShown ? selectedPos : null}
           focusPos={windowShown && !closing && !isOverview ? selectedPos : null}
           side={windowShown && !closing ? WINDOW_SHARE : 0}

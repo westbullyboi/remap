@@ -217,28 +217,77 @@ function shift(
   return (visibleWidth * side) / 2;
 }
 
-// Where the touchpad of the right half is drawn: centered on the bottom key
-// of the innermost column of the keys right of x = 8. The caller decides
-// whether the keyboard has a touchpad at all.
-export type TouchpadPlacement = {
-  x: number;
-  z: number;
-  w: number;
-  d: number;
-  // The key it is drawn on.
-  key: Key3D;
+// Margin of the base plate around its keys.
+export const PLATE_PAD = 0.28;
+
+// The touchpad of the Dilemma / Corne Procyon36 (and keyboards declaring
+// the Matrix touchpad): on the right half, inside the innermost column of
+// the three main rows, above the thumb keys. It is about 2.4 keys wide.
+const TOUCHPAD_WIDTH = 2.4;
+const TOUCHPAD_MARGIN = 0.15;
+// Space kept between the base plates of the two halves.
+const PLATE_SEPARATION = 0.6;
+
+export type Layout3D = {
+  keys: Key3D[];
+  plates: Plate[];
+  bounds: Bounds;
+  // Where the touchpad is drawn (null: none).
+  touchpad: Bounds | null;
 };
 
-export function touchpadPlacement(
-  keys: Key3D[],
-  size = 1.3
-): TouchpadPlacement | null {
-  const right = keys.filter((k) => k.x > 8);
-  if (right.length === 0) return null;
-  const minX = Math.min(...right.map((k) => k.x));
-  const column = right.filter((k) => Math.abs(k.x - minX) < 0.1);
-  const maxZ = Math.max(...column.map((k) => k.z));
-  const key = column.find((k) => Math.abs(k.z - maxZ) < 0.1);
-  if (!key) return null;
-  return { x: key.x, z: key.z, w: size, d: size, key };
+// The 3D layout of the keyboard. With a touchpad, the right half moves
+// right when the keymap leaves too little room between the halves for it
+// (layouts often draw the halves closer than they are).
+export function layout3D(keys: Key3D[], touchpad: boolean): Layout3D {
+  const list = plates(keys);
+  const area = touchpad ? touchpadArea(list) : null;
+  if (!area) {
+    return { keys, plates: list, bounds: unionBounds(list), touchpad: null };
+  }
+  const left = list[list.length - 2];
+  const right = list[list.length - 1];
+  const shift = Math.max(
+    0,
+    left.maxX + 2 * PLATE_PAD + PLATE_SEPARATION - area.minX
+  );
+  const moved = new Map<Key3D, Key3D>(
+    right.keys.map((k) => [k, { ...k, x: k.x + shift }])
+  );
+  const pad: Bounds = {
+    ...area,
+    minX: area.minX + shift,
+    maxX: area.maxX + shift,
+  };
+  const rightKeys = right.keys.map((k) => moved.get(k)!);
+  const newRight: Plate = {
+    ...unionBounds([...rightKeys.map(keyBounds), pad]),
+    keys: rightKeys,
+  };
+  const newPlates = [...list.slice(0, -1), newRight];
+  return {
+    keys: keys.map((k) => moved.get(k) || k),
+    plates: newPlates,
+    bounds: unionBounds(newPlates),
+    touchpad: pad,
+  };
+}
+
+// Inside the innermost column of the right half's three main rows.
+function touchpadArea(list: Plate[]): Bounds | null {
+  if (list.length < 2) return null;
+  const right = list[list.length - 1];
+  const main0 = right.keys.filter((k) => k.angle === 0 && !k.model.isEncoder);
+  if (main0.length === 0) return null;
+  const top = Math.min(...main0.map((k) => k.z - k.d / 2));
+  const main = main0.filter((k) => k.z - k.d / 2 < top + 3);
+  const innerX = Math.min(...main.map((k) => k.x - k.w / 2));
+  const inner = main.filter((k) => Math.abs(k.x - k.w / 2 - innerX) < 0.01);
+  const maxX = innerX - TOUCHPAD_MARGIN;
+  return {
+    minX: maxX - TOUCHPAD_WIDTH,
+    maxX,
+    minZ: Math.min(...inner.map((k) => k.z - k.d / 2)),
+    maxZ: Math.max(...inner.map((k) => k.z + k.d / 2)),
+  };
 }
