@@ -1933,3 +1933,33 @@ button:disabled {
     transition: none !important;
   }
 }
+
+// Settings of the selected tab over the 3D keyboard (ViewWindow).
+.mx-win.mx-viewwin {
+  width: min(640px, calc(100% - 32px));
+  padding: 14px 16px 16px;
+  gap: 8px;
+  &::before {
+    display: none;
+  }
+  .mx-viewwin-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: none;
+    b {
+      font-size: 15px;
+    }
+  }
+  .mx-viewwin-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    border-radius: 16px;
+  }
+  .mx-macro-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}

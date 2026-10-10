@@ -34,6 +34,8 @@ type Keymap3DProps = {
   bounds: Bounds;
   // Where the touchpad of the right half is drawn (null: none).
   touchpad: Bounds | null;
+  // Clicking the touchpad opens its settings.
+  onTouchpad: () => void;
   selectedPos: string | null;
   // The key the camera zooms to (null: the whole keyboard).
   focusPos: string | null;
@@ -71,7 +73,9 @@ export default function Keymap3D(props: Keymap3DProps) {
         {props.plates.map((plate, i) => (
           <PlateMesh key={i} plate={plate} />
         ))}
-        {props.touchpad && <TouchpadMesh area={props.touchpad} />}
+        {props.touchpad && (
+          <TouchpadMesh area={props.touchpad} onPick={props.onTouchpad} />
+        )}
         {props.keys.map((k) => (
           <Keycap3D
             key={k.key.model.location}
@@ -102,14 +106,30 @@ function AnimatedKeyboard({ children }: { children: React.ReactNode }) {
 }
 
 // The touchpad: a flat pad on the plate, lower than the keycaps.
-function TouchpadMesh(props: { area: Bounds }) {
+function TouchpadMesh(props: { area: Bounds; onPick: () => void }) {
   const { area } = props;
+  const [hover, setHover] = useState(false);
+  useEffect(() => () => void (document.body.style.cursor = ''), []);
   const w = area.maxX - area.minX;
   const d = area.maxZ - area.minZ;
   const cx = (area.minX + area.maxX) / 2;
   const cz = (area.minZ + area.maxZ) / 2;
   return (
-    <group>
+    <group
+      onClick={(e: ThreeEvent<MouseEvent>) => {
+        e.stopPropagation();
+        props.onPick();
+      }}
+      onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+        e.stopPropagation();
+        setHover(true);
+        document.body.style.cursor = 'pointer';
+      }}
+      onPointerOut={() => {
+        setHover(false);
+        document.body.style.cursor = '';
+      }}
+    >
       <RoundedBox
         args={[w, 0.2, d]}
         radius={0.08}
@@ -129,7 +149,10 @@ function TouchpadMesh(props: { area: Bounds }) {
         smoothness={2}
         position={[cx, 0.19, cz]}
       >
-        <meshStandardMaterial color="#aaaaaa" roughness={0.9} />
+        <meshStandardMaterial
+          color={hover ? '#c4c6cc' : '#aaaaaa'}
+          roughness={0.9}
+        />
       </RoundedBox>
     </group>
   );

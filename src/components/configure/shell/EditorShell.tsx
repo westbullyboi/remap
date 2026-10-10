@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 import { t } from 'i18next';
 import Keymap3DView from '../keymap3d/Keymap3DView';
+import ViewWindow from './ViewWindow';
 import './EditorShell.scss';
 import { RootState } from '../../../store/state';
 import { AppActions, NotificationActions } from '../../../actions/actions';
@@ -111,6 +112,7 @@ export default function EditorShell() {
           >
             <div className="mx-stage" style={{ flex: 1 }}>
               <Keymap3DView onUnavailable={() => setUiLayout('classic')} />
+              <ViewWindow view={view} />
             </div>
           </section>
         </main>

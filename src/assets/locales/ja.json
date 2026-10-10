@@ -958,5 +958,8 @@
   "Keyboard view": "キーボードの表示",
   "Loading 3D…": "3D を読み込み中…",
   "Click a key to open its settings": "キーを押すと、そのキーの設定が開きます",
-  "Pick a keycode to assign it to this key": "キーコードを選ぶと、このキーに割り当てて閉じます"
+  "Pick a keycode to assign it to this key": "キーコードを選ぶと、このキーに割り当てて閉じます",
+  "This keyboard has no macros (dynamic keymap macros are off).": "このキーボードにはマクロがありません（ダイナミックキーマップのマクロが無効です）。",
+  "Choose a macro to edit. Assign it to a key with M0, M1... in the Keymap palette.": "編集するマクロを選んでください。キーへの割り当ては、キー設定のパレットの M0、M1… で行います。",
+  "Macros": "マクロ"
 }

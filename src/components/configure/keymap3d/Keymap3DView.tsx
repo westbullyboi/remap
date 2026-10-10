@@ -23,12 +23,19 @@ import { KeymapPdfGenerator } from '../../../services/pdf/KeymapPdfGenerator';
 import './Keymap3DView.scss';
 
 import Keymap3D from './Keymap3D';
+import {
+  getEditorView,
+  openEditorView,
+  useEditorView,
+} from '../remap/EditorViews';
 import { keyboardHasTouchpad } from '../../../services/pointing/TouchpadLayout';
 
 // Share of the stage covered by the settings window.
 const WINDOW_SHARE = 0.42;
 // Length of the window's closing animation (see Keymap3DView.scss).
 const CLOSE_MS = 220;
+// Share covered by the window of another tab (shell/ViewWindow).
+const TAB_WINDOW_SHARE = 0.52;
 
 type Keymap3DViewProps = {
   // Called when the 3D view cannot be shown (no WebGL, an error in the
@@ -164,6 +171,8 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
   useEffect(() => () => clearTimeout(closeTimer.current), []);
 
   const pick = (pos: string) => {
+    // A key picked while another tab's window is open goes back to Keymap.
+    if (getEditorView() !== 'keymap') openEditorView('keymap');
     clearTimeout(closeTimer.current);
     setClosing(false);
     setIsOverview(false);
@@ -206,6 +215,7 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
   });
 
   const windowShown = open && !!selectedPos;
+  const tabWindow = useEditorView() !== 'keymap';
   const current = selectedPos
     ? layerRemaps[selectedPos] || layerKeymaps[selectedPos]
     : undefined;
@@ -227,9 +237,16 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
           plates={geometry.plates}
           bounds={geometry.bounds}
           touchpad={geometry.touchpad}
+          onTouchpad={() => openEditorView('touchpad')}
           selectedPos={windowShown ? selectedPos : null}
           focusPos={windowShown && !closing && !isOverview ? selectedPos : null}
-          side={windowShown && !closing ? WINDOW_SHARE : 0}
+          side={
+            windowShown && !closing
+              ? WINDOW_SHARE
+              : tabWindow
+                ? TAB_WINDOW_SHARE
+                : 0
+          }
           onPick={pick}
           onMiss={close}
         />
