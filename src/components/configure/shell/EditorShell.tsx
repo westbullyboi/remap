@@ -7,7 +7,7 @@ import PanelGlow from './PanelGlow';
 import './EditorShell.scss';
 import { RootState } from '../../../store/state';
 import { AppActions, NotificationActions } from '../../../actions/actions';
-import { setUiLayout } from '../../../services/ui/UiLayout';
+import { fallBackToClassicLayout } from '../../../services/ui/UiLayout';
 import {
   ConfigureView,
   openEditorView,
@@ -23,6 +23,8 @@ import {
   parseKeymapFile,
 } from '../../../services/keymapfile/KeymapFile';
 import {
+  layerColor,
+  layerName,
   replaceLayerMeta,
   useLayerMeta,
 } from '../../../services/layers/LayerMeta';
@@ -113,21 +115,14 @@ export default function EditorShell() {
             }}
           >
             <div className="mx-stage" style={{ flex: 1 }}>
-              <Keymap3DView onUnavailable={() => setUiLayout('classic')} />
+              <Keymap3DView onUnavailable={fallBackToClassicLayout} />
               <ViewWindow view={view} />
             </div>
           </section>
         </main>
 
         <footer className="mx-foot">
-          <div className="mx-hgrp">
-            <button
-              className="mx-btn mx-press"
-              onClick={() => setUiLayout('classic')}
-            >
-              Back to classic layout
-            </button>
-          </div>
+          <div className="mx-hgrp"></div>
           <div className="mx-hgrp">
             <ApplyButton />
           </div>
@@ -202,6 +197,10 @@ function ShellHeaderRight({
   const info = keyboard?.getInformation();
   const layerMeta = useLayerMeta(info);
   const [, forceRender] = useState(0);
+  const [layerMenu, setLayerMenu] = useState(false);
+  const layerCount = useSelector(
+    (s: RootState) => s.entities.device.layerCount || 0
+  );
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -280,6 +279,9 @@ function ShellHeaderRight({
         <button
           className="mx-hbtn mx-press"
           style={{ padding: '0 6px 0 16px' }}
+          aria-haspopup="menu"
+          aria-expanded={layerMenu}
+          onClick={() => setLayerMenu(!layerMenu)}
         >
           <span
             style={{
@@ -305,6 +307,45 @@ function ShellHeaderRight({
             </svg>
           </span>
         </button>
+        {layerMenu && (
+          <>
+            <button
+              type="button"
+              className="mx-menu-close"
+              aria-label={t('Close')}
+              onClick={() => setLayerMenu(false)}
+            />
+            <div className="mx-menu r" role="menu">
+              {[...Array(layerCount)].map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={layer.selected === i}
+                  className="mx-mi"
+                  onClick={() => {
+                    layer.select(i);
+                    setLayerMenu(false);
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      flex: 'none',
+                      background: layerColor(layerMeta, i) || '#d5d8de',
+                    }}
+                  />
+                  <span style={{ flex: 1 }}>
+                    Layer {i} · {layerName(layerMeta, i)}
+                  </span>
+                  {layer.selected === i && <b aria-hidden="true">✓</b>}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {bigTab === 'keys' && (

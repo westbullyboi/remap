@@ -16,7 +16,6 @@ import {
   replaceLayerMeta,
   useLayerMeta,
 } from '../../../services/layers/LayerMeta';
-import { setUiLayout, useUiLayout } from '../../../services/ui/UiLayout';
 
 const history = new RemapsHistory();
 
@@ -32,7 +31,6 @@ export default function HeaderActions() {
   const layerMeta = useLayerMeta(info);
   const [, forceRender] = useState(0);
   const importRef = useRef<HTMLInputElement>(null);
-  const layout = useUiLayout();
 
   // A different keyboard, or remaps re-initialised from the device (connect,
   // flash, reset keymap, new definition), starts a fresh history. Declared
@@ -175,15 +173,6 @@ export default function HeaderActions() {
       <button type="button" className="header-pill-button" onClick={onExport}>
         {t('Export')}
       </button>
-      {layout === 'classic' && (
-        <button
-          type="button"
-          className="header-text-button"
-          onClick={() => setUiLayout('shell')}
-        >
-          {t('Try the new layout')}
-        </button>
-      )}
     </div>
   );
 }

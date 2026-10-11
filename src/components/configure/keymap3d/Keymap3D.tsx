@@ -7,6 +7,11 @@ import { RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import { Suspense } from 'react';
 import { VanillaDither } from './VanillaDither';
+import {
+  ledColor,
+  LedKey,
+  LightingPreviewState,
+} from '../../../services/lighting/LightingPreview';
 
 import {
   Bounds,
@@ -44,6 +49,17 @@ type Keymap3DProps = {
   // eslint-disable-next-line no-unused-vars
   onPick: (pos: string) => void;
   onMiss: () => void;
+  // The LEDs as they light up (Lighting settings open), null: not shown.
+  lighting?: LedPreview | null;
+};
+
+export type LedPreview = {
+  state: LightingPreviewState;
+  layer: number;
+  // LED color index of the layer (0: the lighting effect).
+  layerColor: number;
+  // Keycode at each key position on the layer.
+  codes: { [pos: string]: number };
 };
 
 const FOV = 32;
@@ -75,6 +91,13 @@ export default function Keymap3D(props: Keymap3DProps) {
         ))}
         {props.touchpad && (
           <TouchpadMesh area={props.touchpad} onPick={props.onTouchpad} />
+        )}
+        {props.lighting && (
+          <LedOverlay
+            keys={props.keys}
+            bounds={props.bounds}
+            lighting={props.lighting}
+          />
         )}
         {props.keys.map((k) => (
           <Keycap3D
@@ -155,6 +178,88 @@ function TouchpadMesh(props: { area: Bounds; onPick: () => void }) {
         />
       </RoundedBox>
     </group>
+  );
+}
+
+// The keys' LEDs, drawn in color over the keycap tops after the 1-bit
+// dithering (layer 1), recalculated every frame for the moving effects.
+function LedOverlay(props: {
+  keys: Keymap3DKey[];
+  bounds: Bounds;
+  lighting: LedPreview;
+}) {
+  const leds = useMemo(() => {
+    const { minX, maxX, minZ, maxZ } = props.bounds;
+    return props.keys
+      .filter((k) => k.key.model.pos && !k.encoder)
+      .map((k, i) => ({
+        key: k.key,
+        pos: k.key.model.pos,
+        px: (k.key.x - minX) / Math.max(maxX - minX, 1),
+        py: (k.key.z - minZ) / Math.max(maxZ - minZ, 1),
+        seed: i + 1,
+      }));
+  }, [props.keys, props.bounds]);
+  const materials = useRef<(THREE.MeshBasicMaterial | null)[]>([]);
+  const lighting = useRef(props.lighting);
+  lighting.current = props.lighting;
+
+  useFrame(({ clock }) => {
+    const { state, layer, layerColor, codes } = lighting.current;
+    const t = clock.getElapsedTime();
+    leds.forEach((led, i) => {
+      const material = materials.current[i];
+      if (!material) return;
+      const key: LedKey = {
+        px: led.px,
+        py: led.py,
+        code: codes[led.pos] ?? 0x04,
+        seed: led.seed,
+      };
+      const color = ledColor(key, t, state.rgb, layer, layerColor, state.guide);
+      if (!color) {
+        material.visible = false;
+        return;
+      }
+      material.visible = true;
+      // Brighter LEDs read as more opaque light on the cap.
+      const level = Math.max(...color);
+      material.color.setRGB(
+        color[0] / level,
+        color[1] / level,
+        color[2] / level
+      );
+      material.opacity = 0.25 + 0.55 * level;
+    });
+  });
+
+  return (
+    <>
+      {leds.map((led, i) => (
+        <group
+          key={led.pos}
+          position={[led.key.x, CAP_HEIGHT + 0.0015, led.key.z]}
+          rotation={[0, led.key.angle, 0]}
+        >
+          <mesh rotation={[-Math.PI / 2, 0, 0]} layers={1} renderOrder={-1}>
+            <planeGeometry
+              args={[
+                Math.max(led.key.w - CAP_GAP - 0.05, 0.25),
+                Math.max(led.key.d - CAP_GAP - 0.05, 0.25),
+              ]}
+            />
+            <meshBasicMaterial
+              ref={(m) => {
+                materials.current[i] = m;
+              }}
+              transparent
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+        </group>
+      ))}
+    </>
   );
 }
 

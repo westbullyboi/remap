@@ -1,9 +1,8 @@
 import { beforeEach } from 'vitest';
 import {
+  fallBackToClassicLayout,
   getUiLayout,
   resetUiLayoutForTest,
-  setUiLayout,
-  uiLayoutFromQuery,
 } from './UiLayout';
 
 describe('UiLayout', () => {
@@ -12,34 +11,18 @@ describe('UiLayout', () => {
     resetUiLayoutForTest();
   });
 
-  test('new layout by default', () => {
+  test('only the new layout is shown', () => {
     expect(getUiLayout()).toBe('shell');
   });
 
-  test('keeps the classic layout for someone who chose it', () => {
+  test('a layout remembered before is ignored', () => {
     window.localStorage.setItem('matrix.uiLayout', 'classic');
+    expect(getUiLayout()).toBe('shell');
+  });
+
+  test('falls back to the classic editor only without 3D', () => {
+    fallBackToClassicLayout();
     expect(getUiLayout()).toBe('classic');
-  });
-
-  test('remembers the chosen layout', () => {
-    setUiLayout('shell');
-    expect(getUiLayout()).toBe('shell');
-    resetUiLayoutForTest();
-    expect(getUiLayout()).toBe('shell');
-    setUiLayout('classic');
-    resetUiLayoutForTest();
-    expect(getUiLayout()).toBe('classic');
-  });
-
-  test('ignores unknown stored values', () => {
-    window.localStorage.setItem('matrix.uiLayout', 'other');
-    expect(getUiLayout()).toBe('shell');
-  });
-
-  test('reads ?ui= from the URL', () => {
-    expect(uiLayoutFromQuery('?ui=new')).toBe('shell');
-    expect(uiLayoutFromQuery('?ui=classic')).toBe('classic');
-    expect(uiLayoutFromQuery('?ui=other')).toBeNull();
-    expect(uiLayoutFromQuery('')).toBeNull();
+    expect(window.localStorage.getItem('matrix.uiLayout')).toBeNull();
   });
 });

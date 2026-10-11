@@ -23,6 +23,8 @@ import { KeymapPdfGenerator } from '../../../services/pdf/KeymapPdfGenerator';
 import './Keymap3DView.scss';
 
 import Keymap3D from './Keymap3D';
+import { useLightingPreview } from '../../../services/lighting/LightingPreview';
+import { useMatrixDeviceData } from '../../../services/matrix/MatrixDeviceData';
 import {
   getEditorView,
   openEditorView,
@@ -216,6 +218,22 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
 
   const windowShown = open && !!selectedPos;
   const editorView = useEditorView();
+  // The Lighting settings show the LEDs on the 3D keyboard.
+  const lightingState = useLightingPreview();
+  const deviceData = useMatrixDeviceData(keyboard);
+  const ledPreview = useMemo(() => {
+    if (editorView !== 'leds') return null;
+    const codes: { [pos: string]: number } = {};
+    Object.keys(layerKeymaps).forEach((pos) => {
+      codes[pos] = (layerRemaps[pos] || layerKeymaps[pos]).code;
+    });
+    return {
+      state: lightingState,
+      layer,
+      layerColor: deviceData.leds?.[layer] ?? 0,
+      codes,
+    };
+  }, [editorView, lightingState, deviceData, layer, layerKeymaps, layerRemaps]);
   const tabWindow = editorView !== 'keymap';
   // The stage's chips come in again when the section changes.
   const chipKey = sectionOf(editorView);
@@ -241,6 +259,7 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
           bounds={geometry.bounds}
           touchpad={geometry.touchpad}
           onTouchpad={() => openEditorView('touchpad')}
+          lighting={ledPreview}
           selectedPos={windowShown ? selectedPos : null}
           focusPos={windowShown && !closing && !isOverview ? selectedPos : null}
           side={

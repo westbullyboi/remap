@@ -13,6 +13,8 @@ export interface DitheringEffectOptions {
   invertColor?: boolean;
   pixelSizeRatio?: number;
   grayscaleOnly?: boolean;
+  // 0: off, 1: the occasional pixel glitch.
+  glitch?: number;
 }
 
 /**
@@ -37,6 +39,7 @@ export class DitheringEffect extends Effect {
     invertColor = false,
     pixelSizeRatio = 1,
     grayscaleOnly = false,
+    glitch = 0,
   }: DitheringEffectOptions = {}) {
     // Initialize uniforms with default values
     const uniforms = new Map<string, THREE.Uniform<number | THREE.Vector2>>([
@@ -48,6 +51,7 @@ export class DitheringEffect extends Effect {
       ['ditheringEnabled', new THREE.Uniform(1)], // Enabled by default
       ['pixelSizeRatio', new THREE.Uniform(pixelSizeRatio)],
       ['grayscaleOnly', new THREE.Uniform(grayscaleOnly ? 1 : 0)],
+      ['glitch', new THREE.Uniform(glitch)],
     ]);
 
     super('DitheringEffect', ditheringShader, {

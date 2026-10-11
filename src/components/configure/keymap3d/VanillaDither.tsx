@@ -23,6 +23,12 @@ export function VanillaDither() {
       gridSize: Math.max(1, Math.round(gl.getPixelRatio())),
       pixelSizeRatio: 1.0,
       grayscaleOnly: true,
+      // A little pixel glitch, not with reduced motion.
+      glitch:
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          ? 0
+          : 1,
     });
 
     composer.addPass(new EffectPass(camera, ditherEffect));

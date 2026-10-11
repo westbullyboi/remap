@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { lightingPreview } from '../../../services/lighting/LightingPreview';
 import { Slider } from '@mui/material';
 import { t } from 'i18next';
 import './RgbMatrixCard.scss';
@@ -77,6 +78,7 @@ export default function RgbMatrixCard(props: Props) {
       }
       stateRef.current = result.state!;
       setState(result.state!);
+      lightingPreview.setRgb(result.state!);
       const matches = await fetchEffectListMatches(
         keyboard,
         props.capabilities
@@ -125,6 +127,7 @@ export default function RgbMatrixCard(props: Props) {
     const next = { ...stateRef.current!, [key]: value };
     stateRef.current = next;
     setState(next);
+    lightingPreview.setRgb(next);
     setSaveState('busy');
     pending.current.add(key);
     flush();

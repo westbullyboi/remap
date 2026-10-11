@@ -1993,3 +1993,13 @@ button:disabled {
     animation: none;
   }
 }
+
+// Click-away layer behind an open header menu.
+.mx-menu-close {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  border: none;
+  background: transparent;
+  cursor: default;
+}

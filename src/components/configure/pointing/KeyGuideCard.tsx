@@ -8,6 +8,7 @@ import {
   probeProtocol,
 } from '../../../services/pointing/PointingSettings';
 import { SaveChip, SaveState, UpdateNotice } from './EdgeKnobShared';
+import { lightingPreview } from '../../../services/lighting/LightingPreview';
 
 // Values 0x9E..0xA0 (firmware r20+): light only the keys that are assigned
 // on the active layer.
@@ -58,6 +59,12 @@ export function KeyGuideCard(props: { keyboard: IKeyboard }) {
       cancelled = true;
     };
   }, [props.keyboard]);
+
+  // The 3D keyboard shows the guide while the Lighting settings are open.
+  useEffect(() => {
+    lightingPreview.setGuide(mode === null ? null : { mode, colorMode, dim });
+  }, [mode, colorMode, dim]);
+  useEffect(() => () => lightingPreview.setGuide(null), []);
 
   const change = async (id: number, value: number) => {
     if (id === GUIDE_ID) setMode(value);
