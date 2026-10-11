@@ -73,13 +73,13 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   // Apply pixelation effect based on grid size and ratio
   float pixelSize = gridSize * pixelSizeRatio;
 
-  // Glitch: now and then (a few short moments a second at most) thin
+  // Glitch (small): now and then (about one short moment in 4 s) thin
   // horizontal bands of pixels slip sideways, and a few pixels flicker.
   float slot = floor(time * 9.0);
-  float burst = step(0.9, glitchHash(vec2(slot, 1.7))) * glitch;
-  float band = floor(fragCoord.y / (3.0 * pixelSize));
-  float bandOn = step(0.8, glitchHash(vec2(band, slot))) * burst;
-  float slip = floor((glitchHash(vec2(band, slot + 5.0)) - 0.5) * 14.0) * pixelSize * bandOn;
+  float burst = step(0.97, glitchHash(vec2(slot, 1.7))) * glitch;
+  float band = floor(fragCoord.y / (2.0 * pixelSize));
+  float bandOn = step(0.9, glitchHash(vec2(band, slot))) * burst;
+  float slip = floor((glitchHash(vec2(band, slot + 5.0)) - 0.5) * 6.0) * pixelSize * bandOn;
   vec2 sampleCoord = clamp(fragCoord + vec2(slip, 0.0), vec2(0.0), resolution - 1.0);
   vec2 pixelatedUV = floor(sampleCoord / pixelSize) * pixelSize / resolution;
   baseColor = texture2D(inputBuffer, pixelatedUV).rgb;
@@ -96,7 +96,7 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   bool dithered = getValue(luminance, fragCoord);
   vec2 cell = floor(fragCoord / pixelSize);
   // Only on the keyboard, not the empty background.
-  if (glitch > 0.0 && inputColor.a > 0.5 && luminance < 0.85 && glitchHash(cell + vec2(slot * 0.37, slot)) > 1.0 - 0.004 * (1.0 + burst * 4.0)) {
+  if (glitch > 0.0 && inputColor.a > 0.5 && luminance < 0.85 && glitchHash(cell + vec2(slot * 0.37, slot)) > 1.0 - 0.0012 * (1.0 + burst * 3.0)) {
     dithered = !dithered;
   }
   

@@ -3,6 +3,7 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 import { t } from 'i18next';
 import Keymap3DView from '../keymap3d/Keymap3DView';
 import ViewWindow from './ViewWindow';
+import { firmwareFlasherStore } from '../firmware/firmwareFlasherStore';
 import PanelGlow from './PanelGlow';
 import './EditorShell.scss';
 import { RootState } from '../../../store/state';
@@ -448,6 +449,7 @@ function ShellHeaderRight({
         className="mx-hbtn mx-press"
         title={t('Firmware')}
         style={{ padding: '0 16px 0 14px' }}
+        onClick={() => firmwareFlasherStore.open(keyboard || null)}
       >
         <svg
           width="17"
