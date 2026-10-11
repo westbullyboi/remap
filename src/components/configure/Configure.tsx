@@ -166,7 +166,7 @@ function Configure(props: ConfigureProps) {
         <main>
           <Content />
         </main>
-        {(props.draggingKey || props.testMatrix) && (
+        {!shell && (props.draggingKey || props.testMatrix) && (
           <div className="dragMask fill-blank"></div>
         )}
         {!props.keyboard && <LicenseLink className="license-link-corner" />}

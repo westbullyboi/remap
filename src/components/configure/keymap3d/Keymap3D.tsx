@@ -51,6 +51,9 @@ type Keymap3DProps = {
   onMiss: () => void;
   // The LEDs as they light up (Lighting settings open), null: not shown.
   lighting?: LedPreview | null;
+  // A keycode dragged from the palette was dropped on the key at `pos`.
+  // eslint-disable-next-line no-unused-vars
+  onDropKey?: (pos: string) => void;
 };
 
 export type LedPreview = {
@@ -68,6 +71,8 @@ const CAP_HEIGHT = 0.42;
 const CAP_GAP = 0.1;
 
 export default function Keymap3D(props: Keymap3DProps) {
+  // The key under a keycode being dragged over the keyboard.
+  const [dropPos, setDropPos] = useState<string | null>(null);
   return (
     <Canvas
       className="keymap3d-canvas"
@@ -106,10 +111,14 @@ export default function Keymap3D(props: Keymap3DProps) {
             selected={
               !!k.key.model.pos && k.key.model.pos === props.selectedPos
             }
+            dropTarget={!!k.key.model.pos && k.key.model.pos === dropPos}
             onPick={props.onPick}
           />
         ))}
       </AnimatedKeyboard>
+      {props.onDropKey && (
+        <DropTarget onHover={setDropPos} onDrop={props.onDropKey} />
+      )}
       <VanillaDither />
     </Canvas>
   );
@@ -263,6 +272,77 @@ function LedOverlay(props: {
   );
 }
 
+// Drops of keycodes dragged from the palette (HTML drag and drop) onto the
+// 3D keys: the key under the pointer is found by casting a ray into the
+// scene and reading the `pos` the key's group carries.
+function DropTarget(props: {
+  // eslint-disable-next-line no-unused-vars
+  onHover: (pos: string | null) => void;
+  // eslint-disable-next-line no-unused-vars
+  onDrop: (pos: string) => void;
+}) {
+  const { gl, camera, scene } = useThree();
+  const handlers = useRef(props);
+  handlers.current = props;
+  useEffect(() => {
+    const el = gl.domElement;
+    // Listen on the whole stage: overlays above the canvas get the events.
+    const area: HTMLElement =
+      el.closest<HTMLElement>('.mx-stage') || el.parentElement || el;
+    const raycaster = new THREE.Raycaster();
+    const keyAt = (e: DragEvent): string | null => {
+      // Not through the settings windows or the stage's buttons.
+      const target = e.target as Element | null;
+      if (target?.closest?.('.mx-win, .mx-float')) return null;
+      const r = el.getBoundingClientRect();
+      raycaster.setFromCamera(
+        new THREE.Vector2(
+          ((e.clientX - r.left) / r.width) * 2 - 1,
+          -((e.clientY - r.top) / r.height) * 2 + 1
+        ),
+        camera
+      );
+      for (const hit of raycaster.intersectObjects(scene.children, true)) {
+        for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
+          if (o.userData && o.userData.pos) return o.userData.pos;
+        }
+      }
+      return null;
+    };
+    let last: string | null = null;
+    const hover = (pos: string | null) => {
+      if (pos !== last) {
+        last = pos;
+        handlers.current.onHover(pos);
+      }
+    };
+    const onOver = (e: DragEvent) => {
+      const pos = keyAt(e);
+      if (pos) {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      }
+      hover(pos);
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      const pos = keyAt(e);
+      hover(null);
+      if (pos) handlers.current.onDrop(pos);
+    };
+    const onLeave = () => hover(null);
+    area.addEventListener('dragover', onOver);
+    area.addEventListener('drop', onDrop);
+    area.addEventListener('dragleave', onLeave);
+    return () => {
+      area.removeEventListener('dragover', onOver);
+      area.removeEventListener('drop', onDrop);
+      area.removeEventListener('dragleave', onLeave);
+    };
+  }, [gl, camera, scene]);
+  return null;
+}
+
 // Eases the camera to the overview or to the focused key.
 function CameraRig(props: {
   keys: Keymap3DKey[];
@@ -343,6 +423,8 @@ function PlateMesh(props: { plate: Plate3D }) {
 function Keycap3D(props: {
   data: Keymap3DKey;
   selected: boolean;
+  // A dragged keycode would land on this key.
+  dropTarget?: boolean;
   // eslint-disable-next-line no-unused-vars
   onPick: (pos: string) => void;
 }) {
@@ -352,7 +434,7 @@ function Keycap3D(props: {
   const group = useRef<THREE.Group>(null);
   const w = Math.max(key.w - CAP_GAP, 0.3);
   const d = Math.max(key.d - CAP_GAP, 0.3);
-  const lift = props.selected ? 0.14 : hover ? 0.06 : 0;
+  const lift = props.selected ? 0.14 : hover || props.dropTarget ? 0.08 : 0;
   const texture = useLabelTexture(label, w, d, props.selected);
 
   // Eases the cap up when hovered or selected.
@@ -384,7 +466,7 @@ function Keycap3D(props: {
   const capColor = props.selected ? '#18191d' : '#f4f5f7';
   return (
     <group position={[key.x, 0, key.z]} rotation={[0, key.angle, 0]}>
-      <group ref={group} {...handlers}>
+      <group ref={group} userData={pos ? { pos } : {}} {...handlers}>
         {encoder ? (
           <mesh position={[0, CAP_HEIGHT / 2, 0]}>
             <cylinderGeometry

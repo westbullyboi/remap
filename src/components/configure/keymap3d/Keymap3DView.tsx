@@ -190,6 +190,24 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
     setOpen(true);
   };
 
+  // A keycode dragged from the palette and dropped on a key.
+  const draggingKey = useSelector(
+    (s: RootState) => s.configure.keycodeKey.draggingKey
+  );
+  const dropKey = (pos: string) => {
+    const original = layerKeymaps[pos];
+    if (!draggingKey || !original) return;
+    const next = draggingKey.keymap;
+    if (sameKeymap(original, next)) {
+      dispatch(AppActions.remapsRemoveKey(layer, pos));
+      if (pos === selectedPos) dispatch(KeydiffActions.clearKeydiff());
+    } else {
+      dispatch(AppActions.remapsSetKey(layer, pos, next));
+      if (pos === selectedPos)
+        dispatch(KeydiffActions.updateKeydiff(original, next));
+    }
+  };
+
   // A keycode picked in the palette is assigned to the selected key.
   const assign = (picked: Key) => {
     if (!selectedPos || closing) return;
@@ -260,6 +278,7 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
           touchpad={geometry.touchpad}
           onTouchpad={() => openEditorView('touchpad')}
           lighting={ledPreview}
+          onDropKey={dropKey}
           selectedPos={windowShown ? selectedPos : null}
           focusPos={windowShown && !closing && !isOverview ? selectedPos : null}
           side={
