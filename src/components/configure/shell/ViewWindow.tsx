@@ -21,6 +21,11 @@ import { KnobPanel } from '../pointing/KnobPanel';
 import Combos from '../combos/Combos';
 import EditorSidebar from '../sidebar/EditorSidebar.container';
 import MacroEditor from '../macroeditor/MacroEditor.container';
+import OsProfileBar from './OsProfileBar';
+import { useOsEdit } from '../../../services/pointing/OsProfiles';
+
+// Settings that have a Mac version (firmware r22).
+const PER_OS_VIEWS: ConfigureView[] = ['touchpad', 'timing', 'knobs'];
 
 const POINTING_MODES: ConfigureView[] = [
   'touchpad',
@@ -35,6 +40,7 @@ export default function ViewWindow(props: { view: ConfigureView }) {
   const { view } = props;
   const dispatch = useDispatch();
   const keyboard = useSelector((s: RootState) => s.entities.keyboard);
+  const osEdit = useOsEdit(keyboard);
 
   // Esc closes the window.
   useEffect(() => {
@@ -95,7 +101,11 @@ export default function ViewWindow(props: { view: ConfigureView }) {
         </button>
       </div>
       <div key={view} className="mx-viewwin-body mx-anim-pane">
-        {body}
+        {PER_OS_VIEWS.includes(view) && (
+          <OsProfileBar keyboard={keyboard} edit={osEdit} />
+        )}
+        {/* Reloads the settings when another OS's set is picked. */}
+        <React.Fragment key={osEdit}>{body}</React.Fragment>
       </div>
     </div>
   );

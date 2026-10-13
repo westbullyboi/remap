@@ -54,6 +54,30 @@ git apply /path/to/remap/firmware/qmk/fork/0001-matrix-hires-scroll-and-sensor-t
   分割キーボードではタッチパッド側から転送します。
 - 初めてリビジョン 12 で起動したときに一度だけ、加速と慣性スクロールをオンにします。
 
+## リビジョン 22: OS ごとの設定（任意）
+
+Windows / Linux 用（PC）と Mac 用の 2 組を持ち、USB 接続時に QMK が判別した OS で切り替えます
+（QMK の OS 判別機能 `OS_DETECTION_ENABLE`。QMK のドキュメントでは推定であり誤判定がありうるとされています）。
+OS ごとに分かれるのは、タッチパッドの縁スライダー・四隅タップ、ノブの押し回し、3 本指スワイプのキーコードと、
+Ctrl と GUI（Cmd / Win）の入れ替えです。キーマップは共通です。エディタの「固定」で常に PC / Mac にもできます。
+
+```make
+# rules.mk
+OS_DETECTION_ENABLE = yes
+```
+
+```c
+// config.h
+#define MATRIX_POINTING_OS_PROFILES
+// Mac 用の組を EEPROM の末尾 64 バイトに保存する。マクロ領域の末尾を 64 バイト縮めるだけで、
+// キーマップの位置は変わらない（ファームウェアを更新してもキーマップは消えない）
+#define DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 64)
+```
+
+- 分割キーボードでは USB 側の半分が判別し、使う組の縁スライダーの有無を反対側へ送ります。
+- Ctrl と GUI の入れ替えは QMK の `keymap_config` を実行中だけ変えます（保存はしません）。
+  このモジュールが入れ替えたときだけ戻すので、マジックキーでの入れ替えには影響しません。
+
 ## 組み込み手順（キーマップに追加する場合）
 
 1. `matrix_pointing.c` と `matrix_pointing.h` をキーマップのフォルダにコピーします。

@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 21
+#define MP_REVISION 22
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -437,6 +437,232 @@ static void mp_ext_load(void) {
 static void mp_ext_save(void) {}
 #endif
 
+// ---------------------------------------------------------------------------
+// Settings per OS (revision 22): a second set of the keycodes that differ
+// between Windows / Linux and macOS (touchpad edges and corners, knob
+// push-and-turn, 3-finger swipes) plus "swap Ctrl and Cmd", chosen from the
+// host OS QMK detects when USB connects (OS_DETECTION_ENABLE), or fixed.
+// The PC set is the one stored as before; the Mac set lives in the last 64
+// bytes of the EEPROM, taken from the end of the macro buffer so the keymap
+// does not move (a firmware update keeps it):
+//
+// config.h:
+//   #define MATRIX_POINTING_OS_PROFILES
+//   #define DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 64)
+// rules.mk:
+//   OS_DETECTION_ENABLE = yes
+#if defined(MATRIX_POINTING_OS_PROFILES) && defined(OS_DETECTION_ENABLE)
+#    define MP_OS
+#    include "eeprom.h"
+#    include "os_detection.h"
+#    ifndef DYNAMIC_KEYMAP_EEPROM_MAX_ADDR
+#        error "Define DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 64) in config.h (MATRIX_POINTING_OS_PROFILES)"
+#    endif
+#    define MP_OS_EEPROM_ADDR ((TOTAL_EEPROM_BYTE_COUNT) - 64)
+#    define MP_OS_MAGIC 0x4F53 // 'OS'
+#    define MP_OS_VERSION 1
+
+// The keycodes that have a Mac version.
+typedef struct __attribute__((packed)) {
+    uint16_t edge_kc[MP_EDGE_COUNT][2];
+    uint16_t corner_kc[MP_CORNER_COUNT];
+    uint16_t knob_kc[MP_KNOB_COUNT][2];
+    uint16_t swipe_kc[4];
+} mp_os_keys_t;
+
+typedef struct __attribute__((packed)) {
+    uint16_t     magic;
+    uint8_t      version;
+    uint8_t      checksum;
+    uint8_t      enabled;         // 1 = the Mac set is used on a Mac
+    uint8_t      mode;            // 0 = by the detected OS, 1 = always PC, 2 = always Mac
+    uint8_t      swap_ctl_gui[2]; // per set [PC, Mac]: swap Ctrl and GUI (Cmd / Win)
+    uint8_t      mac_ready;       // the Mac set was filled (from the PC set)
+    mp_os_keys_t mac;
+} mp_os_t;
+_Static_assert(sizeof(mp_os_t) <= 64, "mp_os_t must fit 64 bytes");
+_Static_assert(DYNAMIC_KEYMAP_EEPROM_MAX_ADDR < MP_OS_EEPROM_ADDR, "the macro buffer overlaps the OS settings");
+
+static mp_os_t mp_os         = {0};
+static uint8_t mp_os_active  = 0; // set in use: 0 PC, 1 Mac
+static uint8_t mp_os_edit    = 0; // set the editor reads and writes
+static uint8_t mp_os_seen    = OS_UNSURE;
+
+static uint8_t mp_os_checksum(const mp_os_t *o) {
+    const uint8_t *b   = (const uint8_t *)o;
+    uint8_t        sum = 0x5A;
+    for (uint8_t i = 4; i < sizeof(mp_os_t); i++) sum = (uint8_t)((sum << 1 | sum >> 7) ^ b[i]);
+    return sum;
+}
+
+static void mp_os_save(void) {
+    mp_os.magic    = MP_OS_MAGIC;
+    mp_os.version  = MP_OS_VERSION;
+    mp_os.checksum = mp_os_checksum(&mp_os);
+    eeprom_update_block(&mp_os, (void *)(uintptr_t)MP_OS_EEPROM_ADDR, sizeof(mp_os));
+}
+
+static void mp_os_load(void) {
+    eeprom_read_block(&mp_os, (void *)(uintptr_t)MP_OS_EEPROM_ADDR, sizeof(mp_os));
+    // Fresh, or the end of an old macro buffer: one set for every OS.
+    if (mp_os.magic != MP_OS_MAGIC || mp_os.version != MP_OS_VERSION || mp_os.checksum != mp_os_checksum(&mp_os)) {
+        memset(&mp_os, 0, sizeof(mp_os));
+    }
+    if (mp_os.mode > 2) mp_os.mode = 0;
+}
+
+// The PC set's keycodes (stored as before revision 22).
+static void mp_os_copy_pc(mp_os_keys_t *k) {
+    uint8_t *to = (uint8_t *)k;
+    memcpy(to + offsetof(mp_os_keys_t, edge_kc), (const uint8_t *)&mp_ext + offsetof(mp_ext_t, edge_kc), sizeof(k->edge_kc));
+    memcpy(to + offsetof(mp_os_keys_t, corner_kc), (const uint8_t *)&mp_ext + offsetof(mp_ext_t, corner_kc), sizeof(k->corner_kc));
+    memcpy(to + offsetof(mp_os_keys_t, knob_kc), (const uint8_t *)&mp_ext + offsetof(mp_ext_t, knob_kc), sizeof(k->knob_kc));
+    memcpy(to + offsetof(mp_os_keys_t, swipe_kc), (const uint8_t *)&mp_config + offsetof(mp_config_t, swipe_kc), sizeof(k->swipe_kc));
+}
+
+static uint8_t mp_os_wanted(void) {
+    if (!mp_os.enabled) return 0;
+    if (mp_os.mode == 1) return 0;
+    if (mp_os.mode == 2) return 1;
+    return (mp_os_seen == OS_MACOS || mp_os_seen == OS_IOS) ? 1 : 0;
+}
+
+static void mp_config_changed(void);
+static void mp_os_apply(void) {
+    mp_os_active = mp_os_wanted();
+    // Swap Ctrl and GUI in the keymap for the set in use (not saved to the
+    // keyboard's own settings, so it follows the OS each time).
+    // Left alone unless this module swapped them (a keyboard may keep its
+    // own swap from the magic keycodes).
+    static bool    swapped = false;
+    const bool     swap    = mp_os.swap_ctl_gui[mp_os_active];
+    if (swap || swapped) {
+        keymap_config.swap_lctl_lgui = swap;
+        keymap_config.swap_rctl_rgui = swap;
+        swapped                      = swap;
+    }
+    mp_config_changed(); // the other half gets the edge masks of the set
+}
+
+// The OS is known some time after USB connects; follow it.
+static void mp_os_task(void) {
+    static uint16_t last = 0;
+    if (timer_elapsed(last) < 100) return;
+    last = timer_read();
+#    ifdef SPLIT_KEYBOARD
+    if (!is_keyboard_master()) return;
+#    endif
+    const uint8_t os = detected_host_os();
+    if (os != mp_os_seen) {
+        mp_os_seen = os;
+        mp_os_apply();
+    }
+}
+
+// Byte offset of the editor's value `id` in the Mac set (-1: not a per-OS
+// value). The struct is packed, so the values are copied, not pointed at.
+static int8_t mp_os_mac_offset(uint8_t id) {
+    if (id >= 0x40 && id <= 0x43) return offsetof(mp_os_keys_t, swipe_kc) + (id - 0x40) * 2;
+    if (id >= 0x82 && id <= 0x89) return offsetof(mp_os_keys_t, edge_kc) + (id - 0x82) * 2;
+    if (id >= 0x8A && id <= 0x8D) return offsetof(mp_os_keys_t, corner_kc) + (id - 0x8A) * 2;
+    if (id >= 0x8E && id <= 0x91) return offsetof(mp_os_keys_t, knob_kc) + (id - 0x8E) * 2;
+    return -1;
+}
+
+// Values 0xA1..0xA6 (see the editor's OsProfiles.ts).
+static bool mp_os_get_value(uint8_t id, uint8_t *data) {
+    switch (id) {
+        case 0xA1: data[0] = mp_os.enabled; return true;
+        case 0xA2: data[0] = mp_os.mode; return true;
+        case 0xA3: data[0] = mp_os_edit; return true;
+        case 0xA4: data[0] = mp_os_seen; return true;
+        case 0xA5: data[0] = mp_os_active; return true;
+        case 0xA6: data[0] = mp_os.swap_ctl_gui[mp_os_edit]; return true;
+    }
+    const int8_t at = mp_os_mac_offset(id);
+    if (mp_os_edit == 1 && at >= 0) {
+        uint16_t v;
+        memcpy(&v, (const uint8_t *)&mp_os.mac + at, sizeof(v));
+        data[0] = v >> 8;
+        data[1] = v & 0xFF;
+        return true;
+    }
+    return false;
+}
+
+static bool mp_os_set_value(uint8_t id, const uint8_t *data) {
+    switch (id) {
+        case 0xA1:
+            mp_os.enabled = data[0] ? 1 : 0;
+            if (mp_os.enabled && !mp_os.mac_ready) {
+                // Start the Mac set from the PC set.
+                mp_os_copy_pc(&mp_os.mac);
+                mp_os.mac_ready = 1;
+            }
+            mp_os_apply();
+            return true;
+        case 0xA2:
+            mp_os.mode = data[0] <= 2 ? data[0] : 0;
+            mp_os_apply();
+            return true;
+        case 0xA3:
+            mp_os_edit = data[0] ? 1 : 0;
+            return true;
+        case 0xA6:
+            mp_os.swap_ctl_gui[mp_os_edit] = data[0] ? 1 : 0;
+            mp_os_apply();
+            return true;
+        case 0xA4:
+        case 0xA5:
+            return true; // read-only
+    }
+    const int8_t at = mp_os_mac_offset(id);
+    if (mp_os_edit == 1 && at >= 0) {
+        const uint16_t v = (uint16_t)((data[0] << 8) | data[1]);
+        memcpy((uint8_t *)&mp_os.mac + at, &v, sizeof(v));
+        mp_config_changed();
+        return true;
+    }
+    return false;
+}
+#else
+static void mp_os_load(void) {}
+static void mp_os_save(void) {}
+static void mp_os_task(void) {}
+static bool mp_os_get_value(uint8_t id, uint8_t *data) {
+    return false;
+}
+static bool mp_os_set_value(uint8_t id, const uint8_t *data) {
+    return false;
+}
+#endif
+
+// The keycodes of the set in use.
+static inline uint16_t mp_edge_kc(uint8_t e, uint8_t d) {
+#ifdef MP_OS
+    if (mp_os_active) return mp_os.mac.edge_kc[e][d];
+#endif
+    return mp_ext.edge_kc[e][d];
+}
+static inline uint16_t mp_corner_kc(uint8_t c) {
+#ifdef MP_OS
+    if (mp_os_active) return mp_os.mac.corner_kc[c];
+#endif
+    return mp_ext.corner_kc[c];
+}
+static inline uint16_t mp_knob_kc(uint8_t k, uint8_t d) {
+#ifdef MP_OS
+    if (mp_os_active) return mp_os.mac.knob_kc[k][d];
+#endif
+    return mp_ext.knob_kc[k][d];
+}
+static inline uint16_t mp_swipe_kc(uint8_t dir) {
+#ifdef MP_OS
+    if (mp_os_active) return mp_os.mac.swipe_kc[dir];
+#endif
+    return mp_config.swipe_kc[dir];
+}
+
 #if defined(VIA_ENABLE) && defined(MATRIX_POINTING_EXT_EEPROM_OFFSET)
 // Keep the keymap over firmware updates (revision 21). VIA accepts its saved
 // data only when the build date matches, so every new build reset the
@@ -785,6 +1011,7 @@ static void mp_load(void) {
     for (uint8_t i = 0; i < ARRAY_SIZE(mp_ext_fields); i++) {
         mp_write_field_at(&mp_ext, &mp_ext_fields[i], mp_read_field_at(&mp_ext, &mp_ext_fields[i]));
     }
+    mp_os_load();
 }
 
 // Drivers may ask for settings before keyboard_post_init_user() runs.
@@ -859,7 +1086,7 @@ bool get_hold_on_other_key_press(uint16_t keycode, keyrecord_t *record) {
 
 static void mp_send_swipe(uint8_t direction) {
     if (direction >= ARRAY_SIZE(mp_config.swipe_kc)) return;
-    const uint16_t keycode = mp_config.swipe_kc[direction];
+    const uint16_t keycode = mp_swipe_kc(direction);
     if (keycode != KC_NO && keycode <= QK_MODS_MAX) tap_code16(keycode);
 }
 
@@ -1072,7 +1299,7 @@ static uint8_t mp_edge_mask(void) {
     uint8_t mask = 0;
     for (uint8_t e = 0; e < MP_EDGE_COUNT; e++) {
         for (uint8_t d = 0; d < 2; d++) {
-            if (mp_ext.edge_kc[e][d]) mask |= 1 << (e * 2 + d);
+            if (mp_edge_kc(e, d)) mask |= 1 << (e * 2 + d);
         }
     }
     return mask;
@@ -1081,7 +1308,7 @@ static uint8_t mp_edge_mask(void) {
 static uint8_t mp_corner_mask(void) {
     uint8_t mask = 0;
     for (uint8_t c = 0; c < MP_CORNER_COUNT; c++) {
-        if (mp_ext.corner_kc[c]) mask |= 1 << c;
+        if (mp_corner_kc(c)) mask |= 1 << c;
     }
     return mask;
 }
@@ -1123,7 +1350,7 @@ static void mp_edge_emit(uint8_t edge, uint8_t forward) {
         return;
     }
 #    endif
-    const uint16_t keycode = mp_ext.edge_kc[edge][forward ? 1 : 0];
+    const uint16_t keycode = mp_edge_kc(edge, forward ? 1 : 0);
 #    ifdef MP_SMOOTH
     if (mp_is_mod_wheel(keycode)) {
         mp_mod_wheel(keycode);
@@ -1146,7 +1373,7 @@ static void mp_corner_emit(uint8_t corner) {
         return;
     }
 #    endif
-    const uint16_t keycode = mp_ext.corner_kc[corner];
+    const uint16_t keycode = mp_corner_kc(corner);
     if (keycode != KC_NO && keycode <= QK_MODS_MAX) tap_code16(keycode);
 }
 
@@ -1521,7 +1748,7 @@ static bool     mp_knob_deferred[MP_KNOB_COUNT] = {0};
 static uint16_t mp_knob_sent[MP_KNOB_COUNT][2]  = {{0}};
 
 static bool mp_knob_has_alt(uint8_t knob) {
-    return mp_ext.knob_kc[knob][0] || mp_ext.knob_kc[knob][1];
+    return mp_knob_kc(knob, 0) || mp_knob_kc(knob, 1);
 }
 
 static bool mp_knob_process(uint16_t keycode, keyrecord_t *record) {
@@ -1532,7 +1759,7 @@ static bool mp_knob_process(uint16_t keycode, keyrecord_t *record) {
         const uint8_t dir = ev->type == ENCODER_CW_EVENT ? 1 : 0;
         if (ev->pressed) {
             mp_knob_turned[knob] = true;
-            const uint16_t alt   = mp_ext.knob_kc[knob][dir];
+            const uint16_t alt   = mp_knob_kc(knob, dir);
             if (alt == KC_NO) return true; // not set: the usual keycode
 #    ifdef MP_SMOOTH
             if (mp_is_mod_wheel(alt)) {
@@ -1866,6 +2093,7 @@ void matrix_pointing_housekeeping(void) {
     mp_guide_compute();
 #    endif
 #endif
+    mp_os_task();
     mp_split_housekeeping();
     mp_sensor_task();
 #ifdef MP_EDGES
@@ -2223,6 +2451,7 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 return;
             }
             if (mp_combo_get_value(*value_id, value_data, length - 3)) return;
+            if (mp_os_get_value(*value_id, value_data)) return;
             const mp_field_t *field = mp_find_field(*value_id);
             const void       *block = &mp_config;
             if (field == NULL) {
@@ -2251,6 +2480,7 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 mp_bootloader_time      = timer_read();
                 return;
             }
+            if (mp_os_set_value(*value_id, value_data)) return;
             const mp_field_t *field = mp_find_field(*value_id);
             void             *block = &mp_config;
             if (field == NULL) {
@@ -2271,6 +2501,7 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
             MP_EEPROM_WRITE(mp_config);
             mp_combos_save();
             mp_ext_save();
+            mp_os_save();
             return;
         default:
             *command_id = id_unhandled;
