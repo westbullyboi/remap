@@ -81,7 +81,7 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
                       <span className="label">{t('Turn')}</span>
                       <span className="help">
                         {t(
-                          'Without pushing. Written with "Write to keyboard"; each layer has its own (switch the layer at the top). For any other key, click the knob on the 3D keyboard.'
+                          'Without pushing. Written with "Write to keyboard"; each layer has its own (switch the layer at the top).'
                         )}
                       </span>
                     </div>
@@ -93,6 +93,27 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
                         directions={[t('Counter-clockwise'), t('Clockwise')]}
                         onChange={(kc) => turn.set(knob.encoderId, kc)}
                       />
+                    </div>
+                  </div>
+                )}
+                {knob && (
+                  <div className="pointing-row">
+                    <div className="pointing-row-label">
+                      <span className="label">{t('Push')}</span>
+                      <span className="help">
+                        {t(
+                          'The key sent when you push the knob, set in the key settings.'
+                        )}
+                      </span>
+                    </div>
+                    <div className="pointing-row-control">
+                      <button
+                        type="button"
+                        className="mx-btn mx-press"
+                        onClick={() => edgeKnobPreview.editPushKey(k)}
+                      >
+                        {t('Change the push key')}
+                      </button>
                     </div>
                   </div>
                 )}

@@ -442,6 +442,7 @@ export function KnobActions3D(props: {
           const moved = drag.current?.moved;
           drag.current = null;
           if (!moved && knob.model.pos) props.onPick(knob.model.pos);
+          else if (!moved) actions.onTouch?.();
         }}
         onPointerOver={(e: ThreeEvent<PointerEvent>) => {
           e.stopPropagation();

@@ -152,6 +152,7 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
       .getKeymap(options)
       .keymaps.filter((m) => !m.isDecal);
   }, [keyboardKeymap, options]);
+  const edgeKnob = useEdgeKnobPreview();
   const geometry = useMemo(
     () => layout3D(models.map(key3D), hasTouchpad),
     [models, hasTouchpad]
@@ -243,7 +244,19 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
   };
   useEffect(() => () => clearTimeout(closeTimer.current), []);
 
-  const pick = (pos: string) => {
+  // Knobs open the Knobs settings (zoomed to that knob) instead of the key
+  // settings; `asKey` edits the knob's push key like any key.
+  const pick = (pos: string, asKey = false) => {
+    const knob = asKey
+      ? undefined
+      : geometry.keys.find((k) => k.model.isEncoder && k.model.pos === pos);
+    if (knob) {
+      const midX = (geometry.bounds.minX + geometry.bounds.maxX) / 2;
+      edgeKnobPreview.setKnob(knob.x < midX ? 0 : 1);
+      if (open) close();
+      if (getEditorView() !== 'knobs') openEditorView('knobs');
+      return;
+    }
     // A key picked while another tab's window is open goes back to Keymap.
     if (getEditorView() !== 'keymap') openEditorView('keymap');
     clearTimeout(closeTimer.current);
@@ -260,6 +273,15 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
     setTab('keycode');
     setOpen(true);
   };
+
+  // "Change the push key" in the Knobs settings.
+  useEffect(() => {
+    const request = edgeKnob.editKey;
+    if (!request) return;
+    edgeKnobPreview.clearEditKey();
+    const knob = knobOf(geometry, request.knob);
+    if (knob?.model.pos) pick(knob.model.pos, true);
+  }, [edgeKnob.editKey]);
 
   // A keycode dragged from the palette and dropped on a key.
   const draggingKey = useSelector(
@@ -325,7 +347,6 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
   }, [editorView, lightingState, deviceData, layer, layerKeymaps, layerRemaps]);
   // The Touchpad settings show the pad's zones, the Knobs settings what
   // the knobs do.
-  const edgeKnob = useEdgeKnobPreview();
   const encodersKeymaps = useSelector(
     (s: RootState) => s.entities.device.encodersKeymaps
   );
@@ -871,10 +892,7 @@ function sectionOf(view: string): string {
 }
 
 // The knob on the left (0) or right (1) half.
-function knobOf(
-  geometry: ReturnType<typeof layout3D>,
-  side: number
-): { x: number; z: number } | null {
+function knobOf(geometry: ReturnType<typeof layout3D>, side: number) {
   const knobs = geometry.keys.filter((k) => k.model.isEncoder);
   if (knobs.length === 0) return null;
   const midX = (geometry.bounds.minX + geometry.bounds.maxX) / 2;

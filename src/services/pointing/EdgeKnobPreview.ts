@@ -15,12 +15,15 @@ export type EdgeKnobPreviewState = {
   zone: TouchpadZone;
   // The knob shown up close in the Knobs settings: 0 left, 1 right.
   knob: number;
+  // A request to edit a knob's push key in the key settings.
+  editKey: { knob: number } | null;
 };
 
 let state: EdgeKnobPreviewState = {
   values: null,
   zone: { kind: 'edge', index: 1 },
   knob: 0,
+  editKey: null,
 };
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
@@ -34,6 +37,15 @@ export const edgeKnobPreview = {
   },
   setZone(zone: TouchpadZone) {
     state = { ...state, zone };
+    emit();
+  },
+  editPushKey(knob: number) {
+    state = { ...state, knob, editKey: { knob } };
+    emit();
+  },
+  clearEditKey() {
+    if (!state.editKey) return;
+    state = { ...state, editKey: null };
     emit();
   },
   setKnob(knob: number) {

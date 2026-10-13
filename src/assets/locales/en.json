@@ -877,8 +877,11 @@
   "Not written yet": "Not written yet",
   "Layer {{layer}}": "Layer {{layer}}",
   "Turn": "Turn",
-  "Without pushing. Written with \"Write to keyboard\"; each layer has its own (switch the layer at the top). For any other key, click the knob on the 3D keyboard.": "Without pushing. Written with \"Write to keyboard\"; each layer has its own (switch the layer at the top). For any other key, click the knob on the 3D keyboard.",
   "Saved in the keyboard at once, on every layer.": "Saved in the keyboard at once, on every layer.",
   "Needs newer firmware": "Needs newer firmware",
-  "Knob": "Knob"
+  "Knob": "Knob",
+  "Without pushing. Written with \"Write to keyboard\"; each layer has its own (switch the layer at the top).": "Without pushing. Written with \"Write to keyboard\"; each layer has its own (switch the layer at the top).",
+  "Push": "Push",
+  "The key sent when you push the knob, set in the key settings.": "The key sent when you push the knob, set in the key settings.",
+  "Change the push key": "Change the push key"
 }

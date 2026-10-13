@@ -970,8 +970,11 @@
   "Not written yet": "未書き込み",
   "Layer {{layer}}": "レイヤー {{layer}}",
   "Turn": "回す",
-  "Without pushing. Written with \"Write to keyboard\"; each layer has its own (switch the layer at the top). For any other key, click the knob on the 3D keyboard.": "押さずに回したとき。「キーボードに反映」で書き込まれます。レイヤーごとに設定できます（上部でレイヤーを切り替え）。一覧にないキーは 3D キーボードのノブをクリックして選んでください。",
   "Saved in the keyboard at once, on every layer.": "変更するとすぐキーボードに保存されます（全レイヤー共通）。",
   "Needs newer firmware": "新しいファームウェアが必要です",
-  "Knob": "ノブ"
+  "Knob": "ノブ",
+  "Without pushing. Written with \"Write to keyboard\"; each layer has its own (switch the layer at the top).": "押さずに回したとき。「キーボードに反映」で書き込まれます。レイヤーごとに設定できます（上部でレイヤーを切り替え）。",
+  "Push": "押す",
+  "The key sent when you push the knob, set in the key settings.": "ノブを押したときに送るキーです。キー設定で変更します。",
+  "Change the push key": "押したときのキーを変更"
 }
