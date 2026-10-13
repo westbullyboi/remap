@@ -53,6 +53,17 @@ export default function SplitSyncBanner() {
       </div>
     );
   }
+  if (status.state === MirrorState.Stuck) {
+    return (
+      <div className="split-firmware-banner split-sync-banner" role="status">
+        <span>
+          {t(
+            'The settings of the two halves could not be made the same, so copying stopped. It tries again after the next change; if this stays, write the firmware to both halves again.'
+          )}
+        </span>
+      </div>
+    );
+  }
   if (status.state !== MirrorState.Ask) return null;
 
   const choose = async (keep: 'usb' | 'other') => {

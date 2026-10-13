@@ -1002,5 +1002,6 @@
   "right half": "右手側",
   "Copying the settings to the other half of the keyboard...": "もう片方のキーボードに設定をコピーしています…",
   "The left and right halves have different settings (keymap, macros, lighting, touchpad...). From now on both keep the same ones. Which half has the settings to keep? The USB cable is on the {{usb}}.": "左右のキーボードで設定（キーマップ・マクロ・ライティング・タッチパッドなど）が違います。今後は左右で同じ設定を保つので、残す方を選んでください。USB ケーブルは{{usb}}につながっています。",
-  "Keep the {{side}} settings": "{{side}}の設定を残す"
+  "Keep the {{side}} settings": "{{side}}の設定を残す",
+  "The settings of the two halves could not be made the same, so copying stopped. It tries again after the next change; if this stays, write the firmware to both halves again.": "左右の設定を同じにできなかったため、コピーを止めました。次に設定を変更したときに再度試します。この表示が続く場合は、左右両方にファームウェアを書き込み直してください。"
 }

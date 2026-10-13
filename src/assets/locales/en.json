@@ -909,5 +909,6 @@
   "right half": "right half",
   "Copying the settings to the other half of the keyboard...": "Copying the settings to the other half of the keyboard...",
   "The left and right halves have different settings (keymap, macros, lighting, touchpad...). From now on both keep the same ones. Which half has the settings to keep? The USB cable is on the {{usb}}.": "The left and right halves have different settings (keymap, macros, lighting, touchpad...). From now on both keep the same ones. Which half has the settings to keep? The USB cable is on the {{usb}}.",
-  "Keep the {{side}} settings": "Keep the {{side}} settings"
+  "Keep the {{side}} settings": "Keep the {{side}} settings",
+  "The settings of the two halves could not be made the same, so copying stopped. It tries again after the next change; if this stays, write the firmware to both halves again.": "The settings of the two halves could not be made the same, so copying stopped. It tries again after the next change; if this stays, write the firmware to both halves again."
 }

@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 24
+#define MP_REVISION 25
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -995,6 +995,7 @@ static void mp_combos_load(void);
 static void mp_combos_clear(void);
 static void mp_split_register(void);
 static void mp_mirror_register(void);
+static void mp_motion_register(void);
 static void mp_config_changed(void);
 
 static void mp_load(void) {
@@ -1054,6 +1055,7 @@ void matrix_pointing_init(void) {
     mp_apply();
     mp_split_register();
     mp_mirror_register();
+    mp_motion_register();
 }
 
 // ---------------------------------------------------------------------------
@@ -2064,8 +2066,17 @@ static void mp_split_info(uint8_t *data) {
 #    define MP_MIRROR_CHUNK 32
 #    define MP_GEN_ADDR (MP_OS_EEPROM_ADDR + 56) // after mp_os_t, inside the reserved block
 #    define MP_MIRROR_MARKER 0xC3
-// Bytes that belong to one half: which hand it is (QMK's EEPROM handedness).
-#    define MP_MIRROR_SKIP(a) ((a) == 14)
+#    include "nvm_eeprom_eeconfig_internal.h"
+// QMK's own settings at the start of the EEPROM are copied only where the
+// editor changes them (default layer, Ctrl / GUI swaps, RGB Matrix); the
+// rest (handedness, debug, ...) belongs to each half (revision 25).
+static inline bool MP_MIRROR_SKIP(uint16_t a) {
+    if (a >= EECONFIG_BASE_SIZE) return false;
+    if (a == (uintptr_t)EECONFIG_DEFAULT_LAYER) return false;
+    if (a >= (uintptr_t)EECONFIG_KEYMAP && a < (uintptr_t)EECONFIG_KEYMAP + 2) return false;
+    if (a >= (uintptr_t)EECONFIG_RGB_MATRIX && a < (uintptr_t)EECONFIG_RGB_MATRIX + 8) return false;
+    return true;
+}
 _Static_assert(sizeof(mp_os_t) <= 56, "the change counter follows mp_os_t");
 _Static_assert(RPC_M2S_BUFFER_SIZE >= MP_MIRROR_CHUNK + 4, "Set RPC_M2S_BUFFER_SIZE to at least 36");
 _Static_assert(RPC_S2M_BUFFER_SIZE >= MP_MIRROR_CHUNK, "Set RPC_S2M_BUFFER_SIZE to at least 32");
@@ -2074,7 +2085,8 @@ enum { MP_MIRROR_STATUS = 1, MP_MIRROR_WRITE = 2, MP_MIRROR_READ = 3 };
 // State for the editor (value 0xA7): 0 not split / off, 1 the other half is
 // not connected, 2 copying, 3 the same on both, 4 both changed: ask, 5 the
 // other half runs a different build.
-enum { MP_MS_OFF, MP_MS_ALONE, MP_MS_COPYING, MP_MS_SAME, MP_MS_ASK, MP_MS_OTHER_BUILD };
+// 6: copying did not make them the same (stopped until the next change).
+enum { MP_MS_OFF, MP_MS_ALONE, MP_MS_COPYING, MP_MS_SAME, MP_MS_ASK, MP_MS_OTHER_BUILD, MP_MS_STUCK };
 
 static uint32_t mp_gen_read(void) {
     uint32_t g = eeprom_read_dword((const uint32_t *)(uintptr_t)MP_GEN_ADDR);
@@ -2088,7 +2100,8 @@ static uint32_t mp_mirror_crc(void) {
         crc ^= eeprom_read_byte((const uint8_t *)(uintptr_t)a);
         for (uint8_t k = 0; k < 8; k++) crc = (crc >> 1) ^ (0xEDB88320UL & -(crc & 1));
     }
-    return ~crc;
+    crc = ~crc;
+    return crc == 0 ? 1 : crc; // as the other half reports it
 }
 
 static void mp_mirror_write_local(uint16_t addr, const uint8_t *data, uint8_t len) {
@@ -2133,11 +2146,18 @@ static void mp_mirror_slave(uint8_t in_len, const void *in, uint8_t out_len, voi
             if (in_len < 4 || mp_slave_pending) return;
             const uint8_t len = i[3] > MP_MIRROR_CHUNK ? MP_MIRROR_CHUNK : i[3];
             if (in_len < 4 + len) return;
+            o[0] = MP_MIRROR_MARKER;
+            // Nothing to write when the chunk is already the same.
+            bool same = true;
+            for (uint8_t k = 0; k < len && same; k++) {
+                const uint16_t a = ((i[1] << 8) | i[2]) + k;
+                same = MP_MIRROR_SKIP(a) || eeprom_read_byte((const uint8_t *)(uintptr_t)a) == i[4 + k];
+            }
+            if (same) return;
             mp_slave_addr = (i[1] << 8) | i[2];
             mp_slave_len  = len;
             memcpy(mp_slave_data, i + 4, len);
             mp_slave_pending = true;
-            o[0]             = MP_MIRROR_MARKER;
             return;
         }
         case MP_MIRROR_READ: {
@@ -2151,17 +2171,33 @@ static void mp_mirror_slave(uint8_t in_len, const void *in, uint8_t out_len, voi
     }
 }
 
-static void mp_mirror_slave_task(void) {
+// The CRC is worked out a little at a time (256 bytes per pass), so the
+// touchpad half never stalls for it.
+static uint16_t mp_slave_crc_at   = 0;
+static uint32_t mp_slave_crc_work = 0xFFFFFFFF;
+static void     mp_mirror_slave_task(void) {
     if (mp_slave_pending) {
         mp_mirror_write_local(mp_slave_addr, mp_slave_data, mp_slave_len);
-        mp_slave_pending   = false;
-        mp_slave_crc_time  = 0; // recompute soon
-        mp_slave_crc       = 0;
+        mp_slave_pending  = false;
+        mp_slave_crc      = 0; // changed: work it out again
+        mp_slave_crc_at   = 0;
+        mp_slave_crc_work = 0xFFFFFFFF;
         return;
     }
-    if (mp_slave_crc == 0 || timer_elapsed(mp_slave_crc_time) > 1000) {
-        mp_slave_crc      = mp_mirror_crc();
+    if (mp_slave_crc != 0 && timer_elapsed(mp_slave_crc_time) < 1000) return;
+    const uint16_t end = mp_slave_crc_at + 256 > MP_MIRROR_SIZE ? MP_MIRROR_SIZE : mp_slave_crc_at + 256;
+    for (uint16_t a = mp_slave_crc_at; a < end; a++) {
+        if (MP_MIRROR_SKIP(a)) continue;
+        mp_slave_crc_work ^= eeprom_read_byte((const uint8_t *)(uintptr_t)a);
+        for (uint8_t k = 0; k < 8; k++) mp_slave_crc_work = (mp_slave_crc_work >> 1) ^ (0xEDB88320UL & -(mp_slave_crc_work & 1));
+    }
+    mp_slave_crc_at = end;
+    if (mp_slave_crc_at >= MP_MIRROR_SIZE) {
+        mp_slave_crc      = ~mp_slave_crc_work;
+        if (mp_slave_crc == 0) mp_slave_crc = 1; // 0 means "not yet"
         mp_slave_crc_time = timer_read();
+        mp_slave_crc_at   = 0;
+        mp_slave_crc_work = 0xFFFFFFFF;
     }
 }
 
@@ -2171,6 +2207,8 @@ static uint8_t  mp_mirror_dir   = 0; // 1 copying to the other half, 2 from it
 static uint16_t mp_mirror_addr  = 0;
 static uint16_t mp_mirror_check = 0;
 static uint8_t  mp_mirror_choice = 0; // editor's answer: 1 keep this half, 2 keep the other
+static uint8_t  mp_mirror_tries  = 0; // copies in a row that did not end the same
+static uint32_t mp_mirror_tried_gen = 0, mp_mirror_tried_peer = 0;
 
 static bool mp_mirror_exec(const uint8_t *req, uint8_t req_len, uint8_t *reply, uint8_t reply_len) {
     return transaction_rpc_exec(MP_SYNC_EEPROM, req_len, req, reply_len, reply);
@@ -2195,7 +2233,7 @@ static void mp_mirror_master_task(void) {
     }
     static uint16_t last = 0;
     if (mp_mirror_dir == 0) {
-        if (timer_elapsed(mp_mirror_check) < 2000 || mp_gen_dirty) return;
+        if (timer_elapsed(mp_mirror_check) < 3000 || mp_gen_dirty) return;
         mp_mirror_check = timer_read();
         const uint8_t req[1] = {MP_MIRROR_STATUS};
         uint8_t       reply[MP_MIRROR_CHUNK] = {0};
@@ -2209,7 +2247,17 @@ static void mp_mirror_master_task(void) {
         if (peer_crc == mp_mirror_crc()) {
             mp_mirror_state  = MP_MS_SAME;
             mp_mirror_choice = 0;
+            mp_mirror_tries  = 0;
             return;
+        }
+        // Copied twice and still not the same (something rewrites its own
+        // copy): stop until either half changes, so the flash is not worn.
+        if (mp_mirror_tries >= 2) {
+            if (gen == mp_mirror_tried_gen && peer_gen == mp_mirror_tried_peer) {
+                mp_mirror_state = MP_MS_STUCK;
+                return;
+            }
+            mp_mirror_tries = 0;
         }
         uint8_t dir = gen > peer_gen ? 1 : gen < peer_gen ? 2 : 0;
         // Copied before and changed since without the editor (lighting keys
@@ -2228,10 +2276,13 @@ static void mp_mirror_master_task(void) {
         mp_mirror_dir   = dir;
         mp_mirror_addr  = 0;
         mp_mirror_state = MP_MS_COPYING;
+        mp_mirror_tries++;
+        mp_mirror_tried_gen  = mp_gen_read();
+        mp_mirror_tried_peer = dir == 1 ? mp_mirror_tried_gen : peer_gen;
         return;
     }
-    // One chunk every 10 ms (about 1.5 s for 4 KB).
-    if (timer_elapsed(last) < 10) return;
+    // One chunk every 15 ms (about 2 s for 4 KB).
+    if (timer_elapsed(last) < 15) return;
     last = timer_read();
     if (mp_mirror_dir == 1) {
         uint8_t req[4 + MP_MIRROR_CHUNK];
@@ -2252,7 +2303,7 @@ static void mp_mirror_master_task(void) {
     if (mp_mirror_addr >= MP_MIRROR_SIZE) {
         const bool pulled = mp_mirror_dir == 2;
         mp_mirror_dir     = 0;
-        mp_mirror_check   = timer_read();
+        mp_mirror_check   = timer_read() - 2500; // check again in 0.5 s
         if (pulled) {
             // The keymap is read from the EEPROM as keys are pressed, but
             // these settings, the lighting and the layers are loaded at
@@ -2349,12 +2400,84 @@ static bool mp_pointing_on_this_side(void) {
 #    endif
 }
 
+#    if defined(SPLIT_KEYBOARD) && defined(MATRIX_POINTING_SPLIT_SYNC) && defined(MATRIX_POINTING_SPLIT_MOTION)
+// Revision 25: the same happens on the touchpad half when the USB cable is
+// on the other half, only worse. QMK's split transport hands the master
+// the fallback's latest report, which the next pass already set to zero, so
+// nearly all movement was lost and the touchpad seemed dead. The touchpad
+// half collects the movement of every pass here (QMK's report then carries
+// only the buttons) and the master fetches it every few milliseconds
+// (MP_SYNC_MOTION).
+//   config.h: #define MATRIX_POINTING_SPLIT_MOTION
+//             add MP_SYNC_MOTION to SPLIT_TRANSACTION_IDS_USER
+#        define MP_REMOTE_MOTION
+#        define MP_MOTION_POLL_MS 8
+// Written only by the main loop (collected) and by the transport handler
+// (sent), so neither needs a lock.
+static volatile int32_t mp_motion_acc[4]  = {0}; // x, y, h, v collected
+static volatile int32_t mp_motion_sent[4] = {0};
+
+static void mp_motion_slave(uint8_t in_len, const void *in, uint8_t out_len, void *out) {
+    uint8_t *o = (uint8_t *)out;
+    if (out_len < 9) return;
+    o[0] = 0xD1; // marker
+    for (uint8_t k = 0; k < 4; k++) {
+        int32_t d = mp_motion_acc[k] - mp_motion_sent[k];
+        if (d > INT16_MAX) d = INT16_MAX;
+        if (d < INT16_MIN) d = INT16_MIN;
+        mp_motion_sent[k] += d;
+        const int16_t v = (int16_t)d;
+        memcpy(o + 1 + k * 2, &v, 2);
+    }
+}
+
+static void mp_motion_register(void) {
+    transaction_register_rpc(MP_SYNC_MOTION, mp_motion_slave);
+}
+
+static void mp_motion_master(void) {
+    static uint16_t last = 0;
+    if (timer_elapsed(last) < MP_MOTION_POLL_MS) return;
+    last = timer_read();
+    if (!is_transport_connected()) return;
+    // Only with the same build on the other half (see the EEPROM mirror).
+    if (mp_peer_state != 1 || mp_peer_build != mp_build_id()) return;
+    const uint8_t req[1]   = {0};
+    uint8_t       reply[9] = {0};
+    if (!transaction_rpc_exec(MP_SYNC_MOTION, sizeof(req), req, sizeof(reply), reply) || reply[0] != 0xD1) return;
+    int16_t v[4];
+    memcpy(v, reply + 1, sizeof(v));
+    mp_drain_x += v[0];
+    mp_drain_y += v[1];
+    mp_drain_h += v[2];
+    mp_drain_v += v[3];
+}
+#    else
+static void mp_motion_register(void) {}
+#    endif
+
 static void mp_drain(void) {
+    report_mouse_t empty = {0};
+#    ifdef MP_REMOTE_MOTION
+    if (!is_keyboard_master()) {
+        // The touchpad half without USB: collect for the master.
+        if (!mp_pointing_on_this_side()) return;
+        const report_mouse_t r = digitizer_pointing_device_driver.get_report(empty);
+        mp_motion_acc[0] += r.x;
+        mp_motion_acc[1] += r.y;
+        mp_motion_acc[2] += r.h;
+        mp_motion_acc[3] += r.v;
+        return;
+    }
+    if (!mp_pointing_on_this_side()) {
+        mp_motion_master();
+        return;
+    }
+#    endif
     // Only on the USB half with the sensor; the other half's report goes
     // through the split transport instead.
     if (!is_keyboard_master() || !mp_pointing_on_this_side()) return;
-    report_mouse_t empty = {0};
-    report_mouse_t r     = digitizer_pointing_device_driver.get_report(empty);
+    const report_mouse_t r = digitizer_pointing_device_driver.get_report(empty);
     mp_drain_x += r.x;
     mp_drain_y += r.y;
     mp_drain_h += r.h;
@@ -2374,6 +2497,7 @@ static report_mouse_t mp_add_drained(report_mouse_t r) {
 }
 #else
 static void                                  mp_drain(void) {}
+static void                                  mp_motion_register(void) {}
 static __attribute__((unused)) report_mouse_t mp_add_drained(report_mouse_t r) {
     return r;
 }

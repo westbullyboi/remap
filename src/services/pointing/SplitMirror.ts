@@ -16,6 +16,8 @@ export enum MirrorState {
   Same = 3,
   Ask = 4,
   OtherBuild = 5,
+  // Copied twice and still different (revision 25): stopped until a change.
+  Stuck = 6,
 }
 
 export type MirrorStatus = { state: MirrorState; usbSide: 'left' | 'right' };
