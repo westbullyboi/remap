@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 22
+#define MP_REVISION 23
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -970,6 +970,15 @@ static void mp_apply(void) {
 #    endif
 #endif
 #ifdef POINTING_DEVICE_AUTO_MOUSE_ENABLE
+    // QMK's setters only reset the auto mouse state: a target layer that is
+    // on at that moment stays on (and nothing turns it off once the auto
+    // mouse layer is disabled). Turning the auto mouse layer off from the
+    // editor usually happens right after using the touchpad, so the mouse
+    // layer stayed active until the keyboard restarted (revision 23).
+    if ((get_auto_mouse_enable() && !mp_config.am_enabled) || get_auto_mouse_layer() != mp_config.am_layer) {
+        const uint8_t old_layer = get_auto_mouse_layer();
+        if (layer_state_is(old_layer) && !get_auto_mouse_toggle()) layer_off(old_layer);
+    }
     set_auto_mouse_layer(mp_config.am_layer);
 #    ifndef MATRIX_POINTING_LEGACY_AUTO_MOUSE
     // Older QMK has no runtime setters for these (AUTO_MOUSE_TIME /

@@ -1,4 +1,4 @@
-From 21d2181b1c2bda92a0ce5a0b1e6c73a7c31d38ad Mon Sep 17 00:00:00 2001
+From 9b9ce30bcaf753a630470fa1d1de09ade202d46f Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 14:40:51 +0000
 Subject: [PATCH] Add Matrix editor support and fix the build on the multitouch
@@ -20,6 +20,8 @@ Subject: [PATCH] Add Matrix editor support and fix the build on the multitouch
   MATRIX_POINTING_OS_PROFILES; the Mac set takes the last 64 bytes of the
   EEPROM from the end of the macro buffer (DYNAMIC_KEYMAP_EEPROM_MAX_ADDR),
   so the keymap does not move.
+- Revision 23: turning the auto mouse layer off (or changing its target)
+  also turns off the mouse layer that is on at that moment.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
@@ -27,10 +29,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  keyboards/corne_procyon36/digitizer_user.c    |   99 +-
  keyboards/corne_procyon36/keyboard.json       |    2 +-
  .../corne_procyon36/keymaps/default/keymap.c  |   26 +-
- keyboards/corne_procyon36/matrix_pointing.c   | 2875 +++++++++++++++++
+ keyboards/corne_procyon36/matrix_pointing.c   | 2884 +++++++++++++++++
  keyboards/corne_procyon36/matrix_pointing.h   |   94 +
  keyboards/corne_procyon36/rules.mk            |   12 +-
- 7 files changed, 3098 insertions(+), 100 deletions(-)
+ 7 files changed, 3107 insertions(+), 100 deletions(-)
  create mode 100644 keyboards/corne_procyon36/matrix_pointing.c
  create mode 100644 keyboards/corne_procyon36/matrix_pointing.h
 
@@ -346,10 +348,10 @@ index 2784405..a661c11 100644
  }
 diff --git a/keyboards/corne_procyon36/matrix_pointing.c b/keyboards/corne_procyon36/matrix_pointing.c
 new file mode 100644
-index 0000000..b81e675
+index 0000000..f630365
 --- /dev/null
 +++ b/keyboards/corne_procyon36/matrix_pointing.c
-@@ -0,0 +1,2875 @@
+@@ -0,0 +1,2884 @@
 +// Matrix pointing settings for QMK (touchpad + auto mouse layer).
 +// See matrix_pointing.h and README.md next to this file.
 +//
@@ -408,7 +410,7 @@ index 0000000..b81e675
 +// Read-only value 0x7C: revision of this module, so the editor can tell that
 +// the keyboard runs an older build. Bump it with every behaviour change.
 +#define MP_REVISION_VALUE_ID 0x7C
-+#define MP_REVISION 22
++#define MP_REVISION 23
 +// Read-only value 0x7D: the other half of a split keyboard —
 +// [state, its revision (2), this build's ID (2), its build ID (2)];
 +// state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -1322,6 +1324,15 @@ index 0000000..b81e675
 +#    endif
 +#endif
 +#ifdef POINTING_DEVICE_AUTO_MOUSE_ENABLE
++    // QMK's setters only reset the auto mouse state: a target layer that is
++    // on at that moment stays on (and nothing turns it off once the auto
++    // mouse layer is disabled). Turning the auto mouse layer off from the
++    // editor usually happens right after using the touchpad, so the mouse
++    // layer stayed active until the keyboard restarted (revision 23).
++    if ((get_auto_mouse_enable() && !mp_config.am_enabled) || get_auto_mouse_layer() != mp_config.am_layer) {
++        const uint8_t old_layer = get_auto_mouse_layer();
++        if (layer_state_is(old_layer) && !get_auto_mouse_toggle()) layer_off(old_layer);
++    }
 +    set_auto_mouse_layer(mp_config.am_layer);
 +#    ifndef MATRIX_POINTING_LEGACY_AUTO_MOUSE
 +    // Older QMK has no runtime setters for these (AUTO_MOUSE_TIME /
