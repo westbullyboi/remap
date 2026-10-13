@@ -3,6 +3,7 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 import { t } from 'i18next';
 import Keymap3DView from '../keymap3d/Keymap3DView';
 import ViewWindow from './ViewWindow';
+import KeymapSafetyDialog from '../safety/KeymapSafetyDialog';
 import { firmwareFlasherStore } from '../firmware/firmwareFlasherStore';
 import PanelGlow from './PanelGlow';
 import './EditorShell.scss';
@@ -562,28 +563,38 @@ function ShellSubNav({
 }
 
 function ApplyButton() {
-  const { pending, writing, write } = useWriteToKeyboard();
+  const { pending, writing, write, issues, writeAnyway, dismissIssues } =
+    useWriteToKeyboard();
   return (
-    <button
-      className={`mx-primary mx-press ${pending === 0 || writing ? 'idle' : ''}`}
-      disabled={pending === 0 || writing}
-      onClick={write}
-    >
-      {writing ? t('Writing...') : t('Write to keyboard')}
-      {pending > 0 && (
-        <span
-          style={{
-            background: '#fff',
-            color: '#0e0e10',
-            padding: '2px 6px',
-            borderRadius: 10,
-            fontSize: 12,
-            marginLeft: 8,
-          }}
-        >
-          {pending}
-        </span>
-      )}
-    </button>
+    <>
+      <button
+        className={`mx-primary mx-press ${pending === 0 || writing ? 'idle' : ''}`}
+        disabled={pending === 0 || writing}
+        onClick={write}
+      >
+        {writing ? t('Writing...') : t('Write to keyboard')}
+        {pending > 0 && (
+          <span
+            style={{
+              background: '#fff',
+              color: '#0e0e10',
+              padding: '2px 6px',
+              borderRadius: 10,
+              fontSize: 12,
+              marginLeft: 8,
+            }}
+          >
+            {pending}
+          </span>
+        )}
+      </button>
+      {/* The keymap check found something: say what before writing. */}
+      <KeymapSafetyDialog
+        open={issues !== null}
+        issues={issues || []}
+        onCancel={dismissIssues}
+        onProceed={writeAnyway}
+      />
+    </>
   );
 }
