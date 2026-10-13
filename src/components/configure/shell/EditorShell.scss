@@ -2090,3 +2090,18 @@ button:disabled {
     }
   }
 }
+
+// Notices above the keyboard card (split halves, firmware updates).
+.mx-notices {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  &:empty {
+    display: none;
+  }
+  .split-firmware-banner {
+    margin: 0 0 10px;
+    border-radius: 12px;
+  }
+}

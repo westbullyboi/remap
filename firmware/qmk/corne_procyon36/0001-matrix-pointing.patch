@@ -1,4 +1,4 @@
-From 9b9ce30bcaf753a630470fa1d1de09ade202d46f Mon Sep 17 00:00:00 2001
+From 9a46f5157fc4bc811619a398a6ca5cc60bf9dff3 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 14:40:51 +0000
 Subject: [PATCH] Add Matrix editor support and fix the build on the multitouch
@@ -22,22 +22,24 @@ Subject: [PATCH] Add Matrix editor support and fix the build on the multitouch
   so the keymap does not move.
 - Revision 23: turning the auto mouse layer off (or changing its target)
   also turns off the mouse layer that is on at that moment.
+- Revision 24: the USB half keeps the other half's EEPROM the same
+  (MATRIX_POINTING_SPLIT_MIRROR, split transaction MP_SYNC_EEPROM).
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- keyboards/corne_procyon36/config.h            |   90 +-
+ keyboards/corne_procyon36/config.h            |   92 +-
  keyboards/corne_procyon36/digitizer_user.c    |   99 +-
  keyboards/corne_procyon36/keyboard.json       |    2 +-
  .../corne_procyon36/keymaps/default/keymap.c  |   26 +-
- keyboards/corne_procyon36/matrix_pointing.c   | 2884 +++++++++++++++++
+ keyboards/corne_procyon36/matrix_pointing.c   | 3173 +++++++++++++++++
  keyboards/corne_procyon36/matrix_pointing.h   |   94 +
  keyboards/corne_procyon36/rules.mk            |   12 +-
- 7 files changed, 3107 insertions(+), 100 deletions(-)
+ 7 files changed, 3398 insertions(+), 100 deletions(-)
  create mode 100644 keyboards/corne_procyon36/matrix_pointing.c
  create mode 100644 keyboards/corne_procyon36/matrix_pointing.h
 
 diff --git a/keyboards/corne_procyon36/config.h b/keyboards/corne_procyon36/config.h
-index e074887..e321391 100644
+index e074887..774bd20 100644
 --- a/keyboards/corne_procyon36/config.h
 +++ b/keyboards/corne_procyon36/config.h
 @@ -69,7 +69,27 @@
@@ -69,7 +71,7 @@ index e074887..e321391 100644
  
  /* ============================================================================
   * その他の設定
-@@ -81,3 +101,71 @@
+@@ -81,3 +101,73 @@
   * Auto Mouse Layer 設定
   * ============================================================================ */
  #define POINTING_DEVICE_AUTO_MOUSE_ENABLE
@@ -91,6 +93,8 @@ index e074887..e321391 100644
 +// マクロ領域の末尾を 64 バイト縮めるだけなので、キーマップの位置は変わらない（更新で消えない）
 +#define MATRIX_POINTING_OS_PROFILES
 +#define DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 64)
++// 左右の設定をそろえる（r24）: USB 側が EEPROM（キーマップ・マクロ・ライティング・Matrix の設定）を反対側へコピーする
++#define MATRIX_POINTING_SPLIT_MIRROR
 +#define MATRIX_POINTING_EDGE_ZONES               // タッチパッドの縁スライダー・四隅タップ
 +#define MATRIX_POINTING_KNOB_KEYS { {3, 2}, {7, 3} } // ノブの押し込みスイッチ {行, 列}（左 e0 / 右 e1）
 +#define MATRIX_POINTING_DEFAULT_AM_LAYER 4       // オートマウスの初期レイヤー = _MOUSE
@@ -134,7 +138,7 @@ index e074887..e321391 100644
 +
 +/* 左右どちらに USB を挿しても、Matrix で変えたタッチパッド設定を右手側（タッチパッド側）へ送る */
 +#define MATRIX_POINTING_SPLIT_SYNC
-+#define SPLIT_TRANSACTION_IDS_USER MP_SYNC_CONFIG, MP_SYNC_SWIPE
++#define SPLIT_TRANSACTION_IDS_USER MP_SYNC_CONFIG, MP_SYNC_SWIPE, MP_SYNC_EEPROM
 +#define RPC_M2S_BUFFER_SIZE 64
 +
 +/* Matrix で設定するコンボ（キー位置はレイヤー 0 のキーで判定） */
@@ -348,10 +352,10 @@ index 2784405..a661c11 100644
  }
 diff --git a/keyboards/corne_procyon36/matrix_pointing.c b/keyboards/corne_procyon36/matrix_pointing.c
 new file mode 100644
-index 0000000..f630365
+index 0000000..db42336
 --- /dev/null
 +++ b/keyboards/corne_procyon36/matrix_pointing.c
-@@ -0,0 +1,2884 @@
+@@ -0,0 +1,3173 @@
 +// Matrix pointing settings for QMK (touchpad + auto mouse layer).
 +// See matrix_pointing.h and README.md next to this file.
 +//
@@ -410,7 +414,7 @@ index 0000000..f630365
 +// Read-only value 0x7C: revision of this module, so the editor can tell that
 +// the keyboard runs an older build. Bump it with every behaviour change.
 +#define MP_REVISION_VALUE_ID 0x7C
-+#define MP_REVISION 23
++#define MP_REVISION 24
 +// Read-only value 0x7D: the other half of a split keyboard —
 +// [state, its revision (2), this build's ID (2), its build ID (2)];
 +// state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -1348,6 +1352,7 @@ index 0000000..f630365
 +static void mp_combos_load(void);
 +static void mp_combos_clear(void);
 +static void mp_split_register(void);
++static void mp_mirror_register(void);
 +static void mp_config_changed(void);
 +
 +static void mp_load(void) {
@@ -1406,6 +1411,7 @@ index 0000000..f630365
 +    mp_load();
 +    mp_apply();
 +    mp_split_register();
++    mp_mirror_register();
 +}
 +
 +// ---------------------------------------------------------------------------
@@ -2397,6 +2403,290 @@ index 0000000..f630365
 +#endif
 +
 +// ---------------------------------------------------------------------------
++// Same settings on both halves (revision 24). Each half keeps its own EEPROM
++// (keymap, macros, lighting, these settings), and only the half with the USB
++// cable uses its own, so moving the cable to the other half brought back
++// whatever that half had. The USB half now copies its EEPROM to the other
++// half whenever they differ, and the newer one wins: every change from the
++// editor bumps a counter stored with the data. When both are equally new but
++// differ (right after updating to this revision), the editor asks which half
++// to keep (values 0xA7 / 0xA8).
++//
++// config.h (needs MATRIX_POINTING_OS_PROFILES, whose reserved block at the
++// end of the EEPROM holds the counter):
++//   #define MATRIX_POINTING_SPLIT_MIRROR
++//   #define SPLIT_TRANSACTION_IDS_USER MP_SYNC_CONFIG, MP_SYNC_SWIPE, MP_SYNC_EEPROM
++#if defined(SPLIT_KEYBOARD) && defined(MATRIX_POINTING_SPLIT_SYNC) && defined(MATRIX_POINTING_SPLIT_MIRROR) && defined(MP_OS)
++#    define MP_MIRROR
++#    define MP_MIRROR_SIZE ((uint16_t)(TOTAL_EEPROM_BYTE_COUNT))
++#    define MP_MIRROR_CHUNK 32
++#    define MP_GEN_ADDR (MP_OS_EEPROM_ADDR + 56) // after mp_os_t, inside the reserved block
++#    define MP_MIRROR_MARKER 0xC3
++// Bytes that belong to one half: which hand it is (QMK's EEPROM handedness).
++#    define MP_MIRROR_SKIP(a) ((a) == 14)
++_Static_assert(sizeof(mp_os_t) <= 56, "the change counter follows mp_os_t");
++_Static_assert(RPC_M2S_BUFFER_SIZE >= MP_MIRROR_CHUNK + 4, "Set RPC_M2S_BUFFER_SIZE to at least 36");
++_Static_assert(RPC_S2M_BUFFER_SIZE >= MP_MIRROR_CHUNK, "Set RPC_S2M_BUFFER_SIZE to at least 32");
++
++enum { MP_MIRROR_STATUS = 1, MP_MIRROR_WRITE = 2, MP_MIRROR_READ = 3 };
++// State for the editor (value 0xA7): 0 not split / off, 1 the other half is
++// not connected, 2 copying, 3 the same on both, 4 both changed: ask, 5 the
++// other half runs a different build.
++enum { MP_MS_OFF, MP_MS_ALONE, MP_MS_COPYING, MP_MS_SAME, MP_MS_ASK, MP_MS_OTHER_BUILD };
++
++static uint32_t mp_gen_read(void) {
++    uint32_t g = eeprom_read_dword((const uint32_t *)(uintptr_t)MP_GEN_ADDR);
++    return g == 0xFFFFFFFF ? 0 : g;
++}
++
++static uint32_t mp_mirror_crc(void) {
++    uint32_t crc = 0xFFFFFFFF;
++    for (uint16_t a = 0; a < MP_MIRROR_SIZE; a++) {
++        if (MP_MIRROR_SKIP(a)) continue;
++        crc ^= eeprom_read_byte((const uint8_t *)(uintptr_t)a);
++        for (uint8_t k = 0; k < 8; k++) crc = (crc >> 1) ^ (0xEDB88320UL & -(crc & 1));
++    }
++    return ~crc;
++}
++
++static void mp_mirror_write_local(uint16_t addr, const uint8_t *data, uint8_t len) {
++    for (uint8_t i = 0; i < len; i++) {
++        if (MP_MIRROR_SKIP(addr + i)) continue;
++        eeprom_update_byte((uint8_t *)(uintptr_t)(addr + i), data[i]);
++    }
++}
++
++// Every change from the editor makes this half's data the newest.
++static bool     mp_gen_dirty = false;
++static uint16_t mp_gen_time  = 0;
++static void     mp_mirror_touch(void) {
++    mp_gen_dirty = true;
++    mp_gen_time  = timer_read();
++}
++
++// --- the other half -------------------------------------------------------
++static uint32_t mp_slave_crc      = 0;
++static uint16_t mp_slave_crc_time = 0;
++static bool     mp_slave_pending  = false;
++static uint16_t mp_slave_addr     = 0;
++static uint8_t  mp_slave_len      = 0;
++static uint8_t  mp_slave_data[MP_MIRROR_CHUNK];
++
++static void mp_mirror_slave(uint8_t in_len, const void *in, uint8_t out_len, void *out) {
++    const uint8_t *i = (const uint8_t *)in;
++    uint8_t       *o = (uint8_t *)out;
++    if (in_len < 1 || out_len < MP_MIRROR_CHUNK) return;
++    memset(o, 0, out_len);
++    switch (i[0]) {
++        case MP_MIRROR_STATUS: {
++            const uint32_t g = mp_gen_read();
++            o[0]             = MP_MIRROR_MARKER;
++            memcpy(o + 1, &g, 4);
++            memcpy(o + 5, &mp_slave_crc, 4);
++            return;
++        }
++        case MP_MIRROR_WRITE: {
++            // Written from the main loop (flash writes do not belong in the
++            // transport handler); refused while the last one is pending.
++            if (in_len < 4 || mp_slave_pending) return;
++            const uint8_t len = i[3] > MP_MIRROR_CHUNK ? MP_MIRROR_CHUNK : i[3];
++            if (in_len < 4 + len) return;
++            mp_slave_addr = (i[1] << 8) | i[2];
++            mp_slave_len  = len;
++            memcpy(mp_slave_data, i + 4, len);
++            mp_slave_pending = true;
++            o[0]             = MP_MIRROR_MARKER;
++            return;
++        }
++        case MP_MIRROR_READ: {
++            if (in_len < 3) return;
++            const uint16_t addr = (i[1] << 8) | i[2];
++            for (uint8_t k = 0; k < MP_MIRROR_CHUNK && k < out_len; k++) {
++                o[k] = eeprom_read_byte((const uint8_t *)(uintptr_t)(addr + k));
++            }
++            return;
++        }
++    }
++}
++
++static void mp_mirror_slave_task(void) {
++    if (mp_slave_pending) {
++        mp_mirror_write_local(mp_slave_addr, mp_slave_data, mp_slave_len);
++        mp_slave_pending   = false;
++        mp_slave_crc_time  = 0; // recompute soon
++        mp_slave_crc       = 0;
++        return;
++    }
++    if (mp_slave_crc == 0 || timer_elapsed(mp_slave_crc_time) > 1000) {
++        mp_slave_crc      = mp_mirror_crc();
++        mp_slave_crc_time = timer_read();
++    }
++}
++
++// --- the USB half ---------------------------------------------------------
++static uint8_t  mp_mirror_state = MP_MS_ALONE;
++static uint8_t  mp_mirror_dir   = 0; // 1 copying to the other half, 2 from it
++static uint16_t mp_mirror_addr  = 0;
++static uint16_t mp_mirror_check = 0;
++static uint8_t  mp_mirror_choice = 0; // editor's answer: 1 keep this half, 2 keep the other
++
++static bool mp_mirror_exec(const uint8_t *req, uint8_t req_len, uint8_t *reply, uint8_t reply_len) {
++    return transaction_rpc_exec(MP_SYNC_EEPROM, req_len, req, reply_len, reply);
++}
++
++static void mp_mirror_master_task(void) {
++    if (mp_gen_dirty && timer_elapsed(mp_gen_time) > 500) {
++        mp_gen_dirty = false;
++        eeprom_update_dword((uint32_t *)(uintptr_t)MP_GEN_ADDR, mp_gen_read() + 1);
++    }
++    if (!is_transport_connected()) {
++        mp_mirror_state = MP_MS_ALONE;
++        mp_mirror_dir   = 0;
++        return;
++    }
++    // Only with the same build on the other half: an older one has fewer
++    // split transactions and must not get this one.
++    if (mp_peer_state != 1 || mp_peer_build != mp_build_id()) {
++        mp_mirror_state = mp_peer_state == 0 ? MP_MS_ALONE : MP_MS_OTHER_BUILD;
++        mp_mirror_dir   = 0;
++        return;
++    }
++    static uint16_t last = 0;
++    if (mp_mirror_dir == 0) {
++        if (timer_elapsed(mp_mirror_check) < 2000 || mp_gen_dirty) return;
++        mp_mirror_check = timer_read();
++        const uint8_t req[1] = {MP_MIRROR_STATUS};
++        uint8_t       reply[MP_MIRROR_CHUNK] = {0};
++        if (!mp_mirror_exec(req, sizeof(req), reply, sizeof(reply)) || reply[0] != MP_MIRROR_MARKER) return;
++        uint32_t peer_gen, peer_crc;
++        memcpy(&peer_gen, reply + 1, 4);
++        memcpy(&peer_crc, reply + 5, 4);
++        if (peer_gen == 0xFFFFFFFF) peer_gen = 0;
++        if (peer_crc == 0) return; // not computed yet
++        const uint32_t gen = mp_gen_read();
++        if (peer_crc == mp_mirror_crc()) {
++            mp_mirror_state  = MP_MS_SAME;
++            mp_mirror_choice = 0;
++            return;
++        }
++        uint8_t dir = gen > peer_gen ? 1 : gen < peer_gen ? 2 : 0;
++        // Copied before and changed since without the editor (lighting keys
++        // and the like) on the half in use: that one is newer.
++        if (dir == 0 && gen > 0) dir = 1;
++        if (dir == 0 && mp_mirror_choice) {
++            dir = mp_mirror_choice;
++            // The kept half becomes the newest, so the copy also ends equal.
++            if (dir == 1) eeprom_update_dword((uint32_t *)(uintptr_t)MP_GEN_ADDR, (gen > peer_gen ? gen : peer_gen) + 1);
++        }
++        mp_mirror_choice = 0;
++        if (dir == 0) {
++            mp_mirror_state = MP_MS_ASK;
++            return;
++        }
++        mp_mirror_dir   = dir;
++        mp_mirror_addr  = 0;
++        mp_mirror_state = MP_MS_COPYING;
++        return;
++    }
++    // One chunk every 10 ms (about 1.5 s for 4 KB).
++    if (timer_elapsed(last) < 10) return;
++    last = timer_read();
++    if (mp_mirror_dir == 1) {
++        uint8_t req[4 + MP_MIRROR_CHUNK];
++        req[0] = MP_MIRROR_WRITE;
++        req[1] = mp_mirror_addr >> 8;
++        req[2] = mp_mirror_addr & 0xFF;
++        req[3] = MP_MIRROR_CHUNK;
++        for (uint8_t k = 0; k < MP_MIRROR_CHUNK; k++) req[4 + k] = eeprom_read_byte((const uint8_t *)(uintptr_t)(mp_mirror_addr + k));
++        uint8_t reply[MP_MIRROR_CHUNK] = {0};
++        if (!mp_mirror_exec(req, sizeof(req), reply, sizeof(reply)) || reply[0] != MP_MIRROR_MARKER) return; // busy: again
++    } else {
++        const uint8_t req[3] = {MP_MIRROR_READ, mp_mirror_addr >> 8, mp_mirror_addr & 0xFF};
++        uint8_t       reply[MP_MIRROR_CHUNK];
++        if (!mp_mirror_exec(req, sizeof(req), reply, sizeof(reply))) return;
++        mp_mirror_write_local(mp_mirror_addr, reply, MP_MIRROR_CHUNK);
++    }
++    mp_mirror_addr += MP_MIRROR_CHUNK;
++    if (mp_mirror_addr >= MP_MIRROR_SIZE) {
++        const bool pulled = mp_mirror_dir == 2;
++        mp_mirror_dir     = 0;
++        mp_mirror_check   = timer_read();
++        if (pulled) {
++            // The keymap is read from the EEPROM as keys are pressed, but
++            // these settings, the lighting and the layers are loaded at
++            // start: restart with the copied data.
++            soft_reset_keyboard();
++        }
++    }
++}
++
++static void mp_mirror_register(void) {
++    transaction_register_rpc(MP_SYNC_EEPROM, mp_mirror_slave);
++}
++
++static void mp_mirror_task(void) {
++    if (is_keyboard_master()) {
++        mp_mirror_master_task();
++    } else {
++        mp_mirror_slave_task();
++    }
++}
++
++static bool mp_mirror_get_value(uint8_t id, uint8_t *data) {
++    if (id != 0xA7) return false;
++    data[0] = mp_mirror_state;
++    data[1] = is_keyboard_left() ? 0 : 1; // the USB half: 0 left, 1 right
++    return true;
++}
++
++static bool mp_mirror_set_value(uint8_t id, const uint8_t *data) {
++    if (id == 0xA7) return true; // read-only
++    if (id != 0xA8) return false;
++    if (data[0] == 1 || data[0] == 2) {
++        mp_mirror_choice = data[0];
++        mp_mirror_check  = 0; // decide now
++    }
++    return true;
++}
++#else
++static void mp_mirror_register(void) {}
++static void mp_mirror_task(void) {}
++static void mp_mirror_touch(void) {}
++static bool mp_mirror_get_value(uint8_t id, uint8_t *data) {
++    return false;
++}
++static bool mp_mirror_set_value(uint8_t id, const uint8_t *data) {
++    return false;
++}
++#endif
++
++#if defined(VIA_ENABLE) && !defined(MATRIX_POINTING_NO_VIA_COMMAND_KB)
++// Changes from the editor (keymap, macros, saved settings) mark this half's
++// EEPROM as the newest (revision 24, see above).
++bool via_command_kb(uint8_t *data, uint8_t length) {
++    switch (data[0]) {
++        case id_set_keyboard_value:
++        case id_dynamic_keymap_set_keycode:
++        case id_dynamic_keymap_reset:
++        case id_custom_save:
++        case id_eeprom_reset:
++        case id_dynamic_keymap_macro_set_buffer:
++        case id_dynamic_keymap_macro_reset:
++        case id_dynamic_keymap_set_buffer:
++        case id_dynamic_keymap_set_encoder:
++            mp_mirror_touch();
++            break;
++        case id_custom_set_value:
++            // Combos are saved as they are set; editing the per-OS set or
++            // choosing a half is not a change.
++            if (data[1] == id_custom_channel && data[2] != 0xA3 && data[2] != 0xA8) mp_mirror_touch();
++            break;
++    }
++    return false; // VIA handles the command as usual
++}
++#endif
++
++// ---------------------------------------------------------------------------
 +// Multitouch fork: the digitizer task runs on every main loop pass and, while
 +// a finger is down, rewrites the fallback's mouse report each pass (to zero
 +// when the sensor has no new data). The pointing task only runs once per
@@ -2458,6 +2748,7 @@ index 0000000..f630365
 +#endif
 +    mp_os_task();
 +    mp_split_housekeeping();
++    mp_mirror_task();
 +    mp_sensor_task();
 +#ifdef MP_EDGES
 +    mp_precision_task();
@@ -2815,6 +3106,7 @@ index 0000000..f630365
 +            }
 +            if (mp_combo_get_value(*value_id, value_data, length - 3)) return;
 +            if (mp_os_get_value(*value_id, value_data)) return;
++            if (mp_mirror_get_value(*value_id, value_data)) return;
 +            const mp_field_t *field = mp_find_field(*value_id);
 +            const void       *block = &mp_config;
 +            if (field == NULL) {
@@ -2844,6 +3136,7 @@ index 0000000..f630365
 +                return;
 +            }
 +            if (mp_os_set_value(*value_id, value_data)) return;
++            if (mp_mirror_set_value(*value_id, value_data)) return;
 +            const mp_field_t *field = mp_find_field(*value_id);
 +            void             *block = &mp_config;
 +            if (field == NULL) {

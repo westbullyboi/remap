@@ -6,6 +6,8 @@ import ViewWindow from './ViewWindow';
 import KeymapSafetyDialog from '../safety/KeymapSafetyDialog';
 import { firmwareFlasherStore } from '../firmware/firmwareFlasherStore';
 import PanelGlow from './PanelGlow';
+import SplitSyncBanner, { SplitFirmwareNotice } from '../split/SplitSyncBanner';
+import { FlashBackupBanner } from '../firmware/FlashBackupBanner';
 import './EditorShell.scss';
 import { RootState } from '../../../store/state';
 import { AppActions, NotificationActions } from '../../../actions/actions';
@@ -104,6 +106,13 @@ export default function EditorShell() {
             paddingBottom: 'clamp(8px, 1.4vh, 14px)',
           }}
         >
+          {/* Notices about the keyboard (left / right halves, firmware
+              updates), shown above the keyboard. */}
+          <div className="mx-notices">
+            <SplitFirmwareNotice />
+            <SplitSyncBanner />
+            <FlashBackupBanner />
+          </div>
           <section
             className="mx-card"
             aria-label="キーボード"

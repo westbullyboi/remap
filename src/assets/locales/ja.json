@@ -997,5 +997,10 @@
   "Unknown": "判別できません",
   "Linux": "Linux",
   "macOS": "macOS",
-  "iOS": "iOS"
+  "iOS": "iOS",
+  "left half": "左手側",
+  "right half": "右手側",
+  "Copying the settings to the other half of the keyboard...": "もう片方のキーボードに設定をコピーしています…",
+  "The left and right halves have different settings (keymap, macros, lighting, touchpad...). From now on both keep the same ones. Which half has the settings to keep? The USB cable is on the {{usb}}.": "左右のキーボードで設定（キーマップ・マクロ・ライティング・タッチパッドなど）が違います。今後は左右で同じ設定を保つので、残す方を選んでください。USB ケーブルは{{usb}}につながっています。",
+  "Keep the {{side}} settings": "{{side}}の設定を残す"
 }

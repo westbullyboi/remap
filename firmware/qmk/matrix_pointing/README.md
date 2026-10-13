@@ -78,6 +78,25 @@ OS_DETECTION_ENABLE = yes
 - Ctrl と GUI の入れ替えは QMK の `keymap_config` を実行中だけ変えます（保存はしません）。
   このモジュールが入れ替えたときだけ戻すので、マジックキーでの入れ替えには影響しません。
 
+## リビジョン 24: 左右で同じ設定にする（分割キーボード）
+
+左右の半分はそれぞれ自分の EEPROM（キーマップ・マクロ・ライティング・Matrix の設定）を持ち、
+USB をつないだ側の内容だけが使われます。そのため、USB を反対側につなぎ替えると別の設定になっていました。
+この版では USB 側が反対側の EEPROM と比べ、違えば新しい方に合わせてコピーします（1 回 4 KB、約 1.5 秒）。
+エディタからの変更があるたびにその半分が「新しい」側になります。両方が別々に変更されていた場合
+（この版に更新した直後など）は、エディタがどちらを残すか尋ねます。反対側の内容を残すと、USB 側は
+コピー後に一度再起動します。左右の判別（EEPROM の handedness）はコピーしません。
+
+```c
+// config.h（MATRIX_POINTING_OS_PROFILES が必要。その予約領域に変更カウンタを置く）
+#define MATRIX_POINTING_SPLIT_MIRROR
+#define SPLIT_TRANSACTION_IDS_USER MP_SYNC_CONFIG, MP_SYNC_SWIPE, MP_SYNC_EEPROM
+```
+
+- 左右が同じビルドのときだけ動作します（ビルドが違うと分割通信の取引番号がずれるため）。
+- このモジュールは `via_command_kb()` を定義します（変更の検知用。VIA の処理はそのまま続きます）。
+  既に定義している場合は `MATRIX_POINTING_NO_VIA_COMMAND_KB` を付けてください。
+
 ## 組み込み手順（キーマップに追加する場合）
 
 1. `matrix_pointing.c` と `matrix_pointing.h` をキーマップのフォルダにコピーします。

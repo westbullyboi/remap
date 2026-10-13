@@ -904,5 +904,10 @@
   "Unknown": "Unknown",
   "Linux": "Linux",
   "macOS": "macOS",
-  "iOS": "iOS"
+  "iOS": "iOS",
+  "left half": "left half",
+  "right half": "right half",
+  "Copying the settings to the other half of the keyboard...": "Copying the settings to the other half of the keyboard...",
+  "The left and right halves have different settings (keymap, macros, lighting, touchpad...). From now on both keep the same ones. Which half has the settings to keep? The USB cable is on the {{usb}}.": "The left and right halves have different settings (keymap, macros, lighting, touchpad...). From now on both keep the same ones. Which half has the settings to keep? The USB cable is on the {{usb}}.",
+  "Keep the {{side}} settings": "Keep the {{side}} settings"
 }
