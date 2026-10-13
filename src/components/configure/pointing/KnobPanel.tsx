@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { t } from 'i18next';
 import { IKeyboard, IKeymap } from '../../../services/hid/Hid';
@@ -6,6 +6,8 @@ import { RootState } from '../../../store/state';
 import { AppActions } from '../../../actions/actions';
 import KeyboardModel from '../../../models/KeyboardModel';
 import { KeycodeList } from '../../../services/hid/KeycodeList';
+import { genKey } from '../keycodekey/KeyGen';
+import Keycodes from '../keycodes/Keycodes.container';
 import { layerName, useLayerMeta } from '../../../services/layers/LayerMeta';
 import { knobKeycodeIds } from '../../../services/pointing/EdgeKnob';
 import { CAP_KNOB_PRESS_TURN } from '../../../services/pointing/PointingSettings';
@@ -24,6 +26,11 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
     CAP_KNOB_PRESS_TURN
   );
   const turn = useKnobTurn();
+  // A direction whose key is being picked from the keycode palette.
+  const [picking, setPicking] = useState<{
+    encoderId: number;
+    dir: number;
+  } | null>(null);
   // Left and right (the firmware's push-and-turn knobs 0 and 1).
   const sides = turn.knobs.length === 1 ? [0] : [0, 1];
   return (
@@ -93,7 +100,51 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
                         directions={[t('Counter-clockwise'), t('Clockwise')]}
                         onChange={(kc) => turn.set(knob.encoderId, kc)}
                       />
+                      <div className="knob-any-keys">
+                        {[t('Counter-clockwise'), t('Clockwise')].map(
+                          (dirName, dir) => {
+                            const on =
+                              picking?.encoderId === knob.encoderId &&
+                              picking.dir === dir;
+                            return (
+                              <button
+                                key={dir}
+                                type="button"
+                                className={`mx-btn mx-press${on ? ' on' : ''}`}
+                                aria-pressed={on}
+                                onClick={() =>
+                                  setPicking(
+                                    on
+                                      ? null
+                                      : { encoderId: knob.encoderId, dir }
+                                  )
+                                }
+                              >
+                                {dirName}: <b>{knob.labels[dir]}</b>
+                              </button>
+                            );
+                          }
+                        )}
+                      </div>
                     </div>
+                  </div>
+                )}
+                {knob && picking?.encoderId === knob.encoderId && (
+                  <div className="knob-key-picker">
+                    <p className="help">
+                      {t('Pick a key for {{direction}}.', {
+                        direction:
+                          picking.dir === 1
+                            ? t('Clockwise')
+                            : t('Counter-clockwise'),
+                      })}
+                    </p>
+                    <Keycodes
+                      onPickKey={(picked) => {
+                        turn.setOne(knob.encoderId, picking.dir, picked.keymap);
+                        setPicking(null);
+                      }}
+                    />
                   </div>
                 )}
                 {knob && (
@@ -179,6 +230,8 @@ type KnobTurn = {
   // [counter-clockwise, clockwise] on the selected layer, with the changes
   // not yet written.
   codes: [number, number];
+  // Key labels of the two directions.
+  labels: [string, string];
   original: [IKeymap | undefined, IKeymap | undefined];
   pending: boolean;
 };
@@ -217,6 +270,8 @@ function useKnobTurn() {
       .filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
   }, [keymap, options]);
 
+  const label = (keymap?: IKeymap) =>
+    keymap ? genKey(keymap, labelLang).label.replace(/\n/g, ' ') || '—' : '—';
   const knobs: KnobTurn[] = encoderIds
     .filter((id) => encodersKeymaps[layer]?.[id])
     .map((id) => {
@@ -227,39 +282,41 @@ function useKnobTurn() {
       return {
         encoderId: id,
         codes: [ccw?.code ?? 0, cw?.code ?? 0],
+        labels: [label(ccw), label(cw)],
         original: [current.counterclockwise, current.clockwise],
         pending: !!(remapped?.counterclockwise || remapped?.clockwise),
       };
     });
 
-  const set = (encoderId: number, codes: [number, number]) => {
+  // One direction (0 counter-clockwise, 1 clockwise) to a keymap.
+  const setOne = (encoderId: number, dir: number, keymap: IKeymap) => {
     const knob = knobs.find((k) => k.encoderId === encoderId);
     if (!knob) return;
+    const op = dir === 1 ? 'cw' : 'ccw';
     const remapped = encodersRemaps[layer]?.[encoderId];
-    (['ccw', 'cw'] as const).forEach((op, i) => {
-      const original = knob.original[i];
-      if (original && original.code === codes[i]) {
-        const has =
-          op === 'cw' ? remapped?.clockwise : remapped?.counterclockwise;
-        if (has) {
-          dispatch(AppActions.encodersRemapsRemoveKey(layer, encoderId, op));
-        }
-        return;
+    const original = knob.original[dir];
+    if (original && original.code === keymap.code) {
+      if (dir === 1 ? remapped?.clockwise : remapped?.counterclockwise) {
+        dispatch(AppActions.encodersRemapsRemoveKey(layer, encoderId, op));
       }
-      dispatch(
-        AppActions.encodersRemapsSetKey(
-          layer,
-          encoderId,
-          KeycodeList.getKeymap(codes[i], labelLang, customKeycodes),
-          op
-        )
-      );
-    });
+      return;
+    }
+    dispatch(AppActions.encodersRemapsSetKey(layer, encoderId, keymap, op));
+  };
+  const set = (encoderId: number, codes: [number, number]) => {
+    codes.forEach((code, dir) =>
+      setOne(
+        encoderId,
+        dir,
+        KeycodeList.getKeymap(code, labelLang, customKeycodes)
+      )
+    );
   };
 
   return {
     knobs,
     set,
+    setOne,
     layerLabel: `${layer} · ${layerName(layerMeta, layer)}`,
   };
 }

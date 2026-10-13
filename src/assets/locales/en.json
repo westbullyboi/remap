@@ -883,5 +883,6 @@
   "Without pushing. Written with \"Write to keyboard\"; each layer has its own (switch the layer at the top).": "Without pushing. Written with \"Write to keyboard\"; each layer has its own (switch the layer at the top).",
   "Push": "Push",
   "The key sent when you push the knob, set in the key settings.": "The key sent when you push the knob, set in the key settings.",
-  "Change the push key": "Change the push key"
+  "Change the push key": "Change the push key",
+  "Pick a key for {{direction}}.": "Pick a key for {{direction}}."
 }

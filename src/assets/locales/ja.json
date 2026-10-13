@@ -976,5 +976,6 @@
   "Without pushing. Written with \"Write to keyboard\"; each layer has its own (switch the layer at the top).": "押さずに回したとき。「キーボードに反映」で書き込まれます。レイヤーごとに設定できます（上部でレイヤーを切り替え）。",
   "Push": "押す",
   "The key sent when you push the knob, set in the key settings.": "ノブを押したときに送るキーです。キー設定で変更します。",
-  "Change the push key": "押したときのキーを変更"
+  "Change the push key": "押したときのキーを変更",
+  "Pick a key for {{direction}}.": "{{direction}}に割り当てるキーを選んでください。"
 }
