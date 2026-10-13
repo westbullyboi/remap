@@ -9,6 +9,7 @@ import {
   UpdateNotice,
   useEdgeKnob,
 } from './EdgeKnobShared';
+import { edgeKnobPreview } from '../../../services/pointing/EdgeKnobPreview';
 
 // Knobs tab: what turning does while the knob is pushed.
 export function KnobPanel(props: { keyboard: IKeyboard | null }) {
@@ -41,7 +42,13 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
         <div className="pointing-body">
           <div className="pointing-sections">
             {[0, 1].map((k) => (
-              <section className="pointing-card" key={k}>
+              <section
+                className="pointing-card"
+                key={k}
+                // The 3D keyboard zooms to the knob being edited.
+                onMouseEnter={() => edgeKnobPreview.setKnob(k)}
+                onFocus={() => edgeKnobPreview.setKnob(k)}
+              >
                 <div className="pointing-card-header">
                   <h2>{k === 0 ? t('Left knob') : t('Right knob')}</h2>
                   <span>{t('While pushed')}</span>
@@ -77,6 +84,11 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
               <p className="knob-note">
                 {t(
                   'When a knob has push-and-turn actions, its push key is sent when you release it, and only if you did not turn the knob. Layer keys and other hold keys on the push still act when pressed.'
+                )}
+              </p>
+              <p className="knob-note">
+                {t(
+                  'Drag a knob on the 3D keyboard sideways to try it. Hold Shift to push and turn.'
                 )}
               </p>
             </section>

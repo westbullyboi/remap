@@ -14,6 +14,12 @@ import {
 } from '../../../services/lighting/LightingPreview';
 
 import {
+  KnobActions3D,
+  KnobActionsOverlay,
+  TouchpadZoneOverlay,
+  TouchpadZones3D,
+} from './ControlOverlays3D';
+import {
   Bounds,
   CameraView,
   Key3D,
@@ -39,8 +45,15 @@ type Keymap3DProps = {
   bounds: Bounds;
   // Where the touchpad of the right half is drawn (null: none).
   touchpad: Bounds | null;
-  // Clicking the touchpad opens its settings.
-  onTouchpad: () => void;
+  // Clicking the touchpad, at (px, py) across it (0-1, y down).
+  // eslint-disable-next-line no-unused-vars
+  onTouchpad: (px: number, py: number) => void;
+  // Touchpad settings: the pad's edge and corner zones (null: not shown).
+  touchpadZones?: TouchpadZoneOverlay[] | null;
+  // Knobs settings: what each knob does (null: not shown).
+  knobActions?: KnobActionsOverlay[] | null;
+  // The camera frames this area instead of the whole keyboard.
+  focusArea?: Bounds | null;
   selectedPos: string | null;
   // The key the camera zooms to (null: the whole keyboard).
   focusPos: string | null;
@@ -83,6 +96,8 @@ const FLIP_SECONDS = 0.42;
 const FLIP_SPREAD = 0.32;
 const CAP_HEIGHT = 0.42;
 const CAP_GAP = 0.1;
+// Top of the touchpad's touch surface.
+const TOUCH_SURFACE_Y = 0.205;
 
 export default function Keymap3D(props: Keymap3DProps) {
   // The key under a keycode being dragged over the keyboard.
@@ -110,7 +125,7 @@ export default function Keymap3D(props: Keymap3DProps) {
       <directionalLight position={[6, 4, -4]} intensity={0.35} />
       <CameraRig
         keys={props.keys}
-        bounds={props.bounds}
+        bounds={stack ? props.bounds : props.focusArea || props.bounds}
         focusPos={props.focusPos}
         side={props.side}
         stackHeight={stack ? (stack.length - 1) * gap : 0}
@@ -151,6 +166,27 @@ export default function Keymap3D(props: Keymap3DProps) {
           {props.touchpad && (
             <TouchpadMesh area={props.touchpad} onPick={props.onTouchpad} />
           )}
+          {props.touchpad && props.touchpadZones && (
+            <TouchpadZones3D
+              area={props.touchpad}
+              y={TOUCH_SURFACE_Y + 0.002}
+              zones={props.touchpadZones}
+            />
+          )}
+          {props.knobActions?.map((actions) => {
+            const knob = props.keys.find(
+              (k) => k.encoder && k.key.model.encoderId === actions.encoderId
+            );
+            return knob ? (
+              <KnobActions3D
+                key={actions.encoderId}
+                knob={knob.key}
+                actions={actions}
+                capHeight={CAP_HEIGHT}
+                onPick={props.onPick}
+              />
+            ) : null;
+          })}
           {props.lighting && (
             <LedOverlay
               keys={props.keys}
@@ -201,9 +237,14 @@ function AnimatedKeyboard({ children }: { children: React.ReactNode }) {
 }
 
 // The touchpad: a flat pad on the plate, lower than the keycaps.
-function TouchpadMesh(props: { area: Bounds; onPick: () => void }) {
+function TouchpadMesh(props: {
+  area: Bounds;
+  // eslint-disable-next-line no-unused-vars
+  onPick: (px: number, py: number) => void;
+}) {
   const { area } = props;
   const [hover, setHover] = useState(false);
+  const group = useRef<THREE.Group>(null);
   useEffect(() => () => void (document.body.style.cursor = ''), []);
   const w = area.maxX - area.minX;
   const d = area.maxZ - area.minZ;
@@ -211,9 +252,17 @@ function TouchpadMesh(props: { area: Bounds; onPick: () => void }) {
   const cz = (area.minZ + area.maxZ) / 2;
   return (
     <group
+      ref={group}
       onClick={(e: ThreeEvent<MouseEvent>) => {
         e.stopPropagation();
-        props.onPick();
+        // Where on the pad, in the keyboard's own coordinates.
+        const p = group.current
+          ? group.current.worldToLocal(e.point.clone())
+          : e.point;
+        props.onPick(
+          Math.min(1, Math.max(0, (p.x - area.minX) / Math.max(w, 0.01))),
+          Math.min(1, Math.max(0, (p.z - area.minZ) / Math.max(d, 0.01)))
+        );
       }}
       onPointerOver={(e: ThreeEvent<PointerEvent>) => {
         e.stopPropagation();

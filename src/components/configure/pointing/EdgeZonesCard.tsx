@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Slider } from '@mui/material';
 import { t } from 'i18next';
 import { IKeyboard } from '../../../services/hid/Hid';
@@ -19,11 +19,18 @@ import {
   UpdateNotice,
   useEdgeKnob,
 } from './EdgeKnobShared';
+import {
+  edgeKnobPreview,
+  useEdgeKnobPreview,
+} from '../../../services/pointing/EdgeKnobPreview';
 
-type Zone = { kind: 'edge'; index: number } | { kind: 'corner'; index: number };
-
-const EDGE_LABELS = ['Left edge', 'Right edge', 'Top edge', 'Bottom edge'];
-const CORNER_LABELS = [
+export const EDGE_LABELS = [
+  'Left edge',
+  'Right edge',
+  'Top edge',
+  'Bottom edge',
+];
+export const CORNER_LABELS = [
   'Top-left corner',
   'Top-right corner',
   'Bottom-left corner',
@@ -36,7 +43,9 @@ export function EdgeZonesCard(props: { keyboard: IKeyboard }) {
     props.keyboard,
     CAP_EDGE_ZONES
   );
-  const [zone, setZone] = useState<Zone>({ kind: 'edge', index: 1 });
+  // Shared with the 3D keyboard: a zone picked on its touchpad opens here.
+  const { zone } = useEdgeKnobPreview();
+  const setZone = edgeKnobPreview.setZone;
 
   const header = (
     <div className="pointing-card-header">
@@ -170,6 +179,7 @@ export function EdgeZonesCard(props: { keyboard: IKeyboard }) {
             </select>
           )}
           <p className="help">
+            {t('You can also click a zone on the 3D touchpad.')}{' '}
             {zone.kind === 'edge'
               ? t(
                   'A keycode is sent each time the finger moves the step distance along the edge.'

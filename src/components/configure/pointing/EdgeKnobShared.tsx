@@ -17,6 +17,7 @@ import {
 } from '../../../services/pointing/PointingSettings';
 import { hexadecimal } from '../../../utils/StringUtils';
 import { firmwareFlasherStore } from '../firmware/firmwareFlasherStore';
+import { edgeKnobPreview } from '../../../services/pointing/EdgeKnobPreview';
 
 export const SAVE_DELAY_MS = 500;
 
@@ -58,6 +59,11 @@ export function useEdgeKnob(
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
   }, [keyboard, capability]);
+
+  // The 3D keyboard draws the zones and the knobs' actions from these.
+  useEffect(() => {
+    edgeKnobPreview.setValues(values);
+  }, [values]);
 
   const write = (next: EdgeKnobValues, entries: [number, number, 1 | 2][]) => {
     setValues(next);
@@ -217,6 +223,6 @@ const KEYCODE_NAMES: { [code: number]: string } = {
   0x004b: 'Page up',
   0x004e: 'Page down',
 };
-function describeKeycode(code: number): string {
+export function describeKeycode(code: number): string {
   return KEYCODE_NAMES[code] || hexadecimal(code, 4);
 }

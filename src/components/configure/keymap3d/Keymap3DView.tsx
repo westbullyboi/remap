@@ -32,6 +32,19 @@ import {
   useEditorView,
 } from '../remap/EditorViews';
 import { keyboardHasTouchpad } from '../../../services/pointing/TouchpadLayout';
+import {
+  edgeKnobPreview,
+  sameZone,
+  useEdgeKnobPreview,
+  zoneRects,
+} from '../../../services/pointing/EdgeKnobPreview';
+import { CORNER_OPTIONS } from '../../../services/pointing/EdgeKnob';
+import { describeKeycode } from '../pointing/EdgeKnobShared';
+import { CORNER_LABELS, EDGE_LABELS } from '../pointing/EdgeZonesCard';
+import type {
+  KnobActionsOverlay,
+  TouchpadZoneOverlay,
+} from './ControlOverlays3D';
 
 // Share of the stage covered by the settings window.
 const WINDOW_SHARE = 0.42;
@@ -310,6 +323,132 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
       codes,
     };
   }, [editorView, lightingState, deviceData, layer, layerKeymaps, layerRemaps]);
+  // The Touchpad settings show the pad's zones, the Knobs settings what
+  // the knobs do.
+  const edgeKnob = useEdgeKnobPreview();
+  const encodersKeymaps = useSelector(
+    (s: RootState) => s.entities.device.encodersKeymaps
+  );
+  const encodersRemaps = useSelector((s: RootState) => s.app.encodersRemaps);
+  const touchpadZones = useMemo(() => {
+    const values = edgeKnob.values;
+    if (editorView !== 'touchpad' || !values || !geometry.touchpad) return null;
+    const name = (code: number) => (code ? t(describeKeycode(code)) : '');
+    const cornerName = (code: number) => {
+      const option = CORNER_OPTIONS.find((o) => o.code === code);
+      return code ? (option ? t(option.label) : describeKeycode(code)) : '';
+    };
+    return zoneRects(values.edgeWidth).map((r): TouchpadZoneOverlay => {
+      const selected = sameZone(r.zone, edgeKnob.zone);
+      const id = `${r.zone.kind}-${r.zone.index}`;
+      if (r.zone.kind === 'corner') {
+        const label = cornerName(values.corners[r.zone.index] || 0);
+        return {
+          ...r,
+          id,
+          kind: 'corner',
+          vertical: false,
+          start: label,
+          end: '',
+          set: !!label,
+          selected,
+          title: t(CORNER_LABELS[r.zone.index]),
+          detail: [label || t('None')],
+        };
+      }
+      const e = r.zone.index;
+      const [a, b] = (values.edges[e] || [0, 0]).map(name);
+      const side = e < 2;
+      return {
+        ...r,
+        id,
+        kind: 'edge',
+        vertical: side,
+        // Strips start at the bottom (side edges) or the left.
+        start: side ? b : a,
+        end: side ? a : b,
+        set: !!(a || b),
+        selected,
+        title: t(EDGE_LABELS[e]),
+        detail:
+          a || b
+            ? [
+                `${side ? t('Slide up') : t('Slide left')} → ${a || t('None')}`,
+                `${side ? t('Slide down') : t('Slide right')} → ${b || t('None')}`,
+              ]
+            : [t('None')],
+      };
+    });
+  }, [editorView, edgeKnob, geometry.touchpad]);
+  const knobActions = useMemo(() => {
+    if (editorView !== 'knobs') return null;
+    const knobs = geometry.keys.filter(
+      (k) => k.model.isEncoder && k.model.encoderId !== null
+    );
+    if (knobs.length === 0) return null;
+    const midX = (geometry.bounds.minX + geometry.bounds.maxX) / 2;
+    const label = (keymap?: IKeymap) =>
+      keymap ? genKey(keymap, labelLang).label.replace(/\n/g, ' ') : '';
+    return knobs.map((k): KnobActionsOverlay => {
+      const id = k.model.encoderId!;
+      const current = encodersKeymaps[layer]?.[id];
+      const remapped = encodersRemaps[layer]?.[id];
+      // The firmware's push-and-turn knobs are 0 left, 1 right.
+      const side = k.x < midX ? 0 : 1;
+      const push = edgeKnob.values?.knobs[side];
+      const pushName = (code: number) =>
+        `${t('While pushed')}: ${code ? t(describeKeycode(code)) : t('None')}`;
+      return {
+        encoderId: id,
+        onTouch: () => edgeKnobPreview.setKnob(side),
+        turn: [
+          label(remapped?.counterclockwise || current?.counterclockwise),
+          label(remapped?.clockwise || current?.clockwise),
+        ],
+        push: push ? [pushName(push[0]), pushName(push[1])] : null,
+      };
+    });
+  }, [
+    editorView,
+    geometry,
+    encodersKeymaps,
+    encodersRemaps,
+    layer,
+    labelLang,
+    edgeKnob.values,
+  ]);
+  // The Touchpad settings frame the pad (and the card above it), the Knobs
+  // settings the knobs and their cards.
+  const focusArea = useMemo(() => {
+    if (editorView === 'touchpad' && geometry.touchpad) {
+      return {
+        minX: geometry.touchpad.minX - 1.4,
+        maxX: geometry.touchpad.maxX + 1.4,
+        minZ: geometry.touchpad.minZ - 1.8,
+        maxZ: geometry.touchpad.maxZ + 0.8,
+      };
+    }
+    const knob = knobOf(geometry, edgeKnob.knob);
+    if (editorView === 'knobs' && knob) {
+      return {
+        minX: knob.x - 3.6,
+        maxX: knob.x + 3.6,
+        minZ: knob.z - 2.2,
+        maxZ: knob.z + 2.2,
+      };
+    }
+    return null;
+  }, [editorView, geometry, edgeKnob.knob]);
+  const pickTouchpad = (px: number, py: number) => {
+    if (editorView === 'touchpad' && edgeKnob.values) {
+      const hit = zoneRects(edgeKnob.values.edgeWidth).find(
+        (r) => px >= r.x0 && px <= r.x1 && py >= r.y0 && py <= r.y1
+      );
+      if (hit) edgeKnobPreview.setZone(hit.zone);
+      return;
+    }
+    openEditorView('touchpad');
+  };
   const tabWindow = editorView !== 'keymap';
   // The stage's chips come in again when the section changes.
   const chipKey = sectionOf(editorView);
@@ -334,7 +473,10 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
           plates={geometry.plates}
           bounds={geometry.bounds}
           touchpad={geometry.touchpad}
-          onTouchpad={() => openEditorView('touchpad')}
+          onTouchpad={pickTouchpad}
+          touchpadZones={stack ? null : touchpadZones}
+          knobActions={stack ? null : knobActions}
+          focusArea={focusArea}
           lighting={stack ? null : ledPreview}
           layer={layer}
           stack={stack}
@@ -726,4 +868,18 @@ function sectionOf(view: string): string {
     return 'pointing';
   if (view === 'leds') return 'lighting';
   return 'keys';
+}
+
+// The knob on the left (0) or right (1) half.
+function knobOf(
+  geometry: ReturnType<typeof layout3D>,
+  side: number
+): { x: number; z: number } | null {
+  const knobs = geometry.keys.filter((k) => k.model.isEncoder);
+  if (knobs.length === 0) return null;
+  const midX = (geometry.bounds.minX + geometry.bounds.maxX) / 2;
+  return (
+    knobs.find((k) => (k.x < midX ? 0 : 1) === side) ||
+    knobs[Math.min(side, knobs.length - 1)]
+  );
 }
