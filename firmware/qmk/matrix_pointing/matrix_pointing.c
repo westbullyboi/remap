@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 26
+#define MP_REVISION 27
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -2416,33 +2416,26 @@ static bool mp_pointing_on_this_side(void) {
 //             add MP_SYNC_MOTION to SPLIT_TRANSACTION_IDS_USER
 #        define MP_REMOTE_MOTION
 #        define MP_MOTION_POLL_MS 4
-// Written only by the main loop (collected) and by the transport handler
-// (sent), so neither needs a lock. Index 4 counts the sensor frames
-// (passes that had movement); their spacing goes along (revision 26), so
-// the USB half's smoothing and acceleration see the real frame timing
-// rather than the polling.
-static volatile int32_t  mp_motion_acc[5]  = {0}; // x, y, h, v, frames collected
-static volatile int32_t  mp_motion_sent[5] = {0};
+// The touchpad half only adds to running totals (index 4 counts the sensor
+// frames, passes that had movement) and the reply carries the totals
+// themselves: the USB half takes the difference to the totals it saw
+// last, so a fetch that fails on the way loses nothing, it just comes
+// with the next one (revision 27; before, a lost reply lost its movement,
+// which made the cursor slower). The frames' spacing goes along
+// (revision 26) so the smoothing and acceleration see the real timing.
+static volatile uint32_t mp_motion_acc[5]    = {0}; // x, y, h, v, frames (wrapping)
 static volatile uint16_t mp_motion_frame_x16 = 8 * 16; // frame spacing, ms x16
 
 static void mp_motion_slave(uint8_t in_len, const void *in, uint8_t out_len, void *out) {
     uint8_t *o = (uint8_t *)out;
-    if (out_len < 12) return;
-    o[0] = 0xD1; // marker
-    for (uint8_t k = 0; k < 4; k++) {
-        int32_t d = mp_motion_acc[k] - mp_motion_sent[k];
-        if (d > INT16_MAX) d = INT16_MAX;
-        if (d < INT16_MIN) d = INT16_MIN;
-        mp_motion_sent[k] += d;
-        const int16_t v = (int16_t)d;
-        memcpy(o + 1 + k * 2, &v, 2);
+    if (out_len < 23) return;
+    o[0] = 0xD2; // marker (totals)
+    for (uint8_t k = 0; k < 5; k++) {
+        const uint32_t v = mp_motion_acc[k];
+        memcpy(o + 1 + k * 4, &v, 4);
     }
-    int32_t frames = mp_motion_acc[4] - mp_motion_sent[4];
-    if (frames > 255) frames = 255;
-    mp_motion_sent[4] += frames;
-    o[9]                 = (uint8_t)frames;
     const uint16_t spacing = mp_motion_frame_x16;
-    memcpy(o + 10, &spacing, 2);
+    memcpy(o + 21, &spacing, 2);
 }
 
 static void mp_motion_register(void) {
@@ -2453,23 +2446,36 @@ static void mp_motion_master(void) {
     static uint16_t last = 0;
     if (timer_elapsed(last) < MP_MOTION_POLL_MS) return;
     last = timer_read();
-    if (!is_transport_connected()) return;
     // Only with the same build on the other half (see the EEPROM mirror).
-    if (mp_peer_state != 1 || mp_peer_build != mp_build_id()) return;
+    static uint32_t seen[5];
+    static bool    have_seen = false;
+    if (!is_transport_connected() || mp_peer_state != 1 || mp_peer_build != mp_build_id()) {
+        have_seen = false;
+        return;
+    }
     const uint8_t req[1]    = {0};
-    uint8_t       reply[12] = {0};
-    if (!transaction_rpc_exec(MP_SYNC_MOTION, sizeof(req), req, sizeof(reply), reply) || reply[0] != 0xD1) return;
-    int16_t v[4];
-    memcpy(v, reply + 1, sizeof(v));
-    mp_drain_x += v[0];
-    mp_drain_y += v[1];
-    mp_drain_h += v[2];
-    mp_drain_v += v[3];
+    uint8_t       reply[23] = {0};
+    if (!transaction_rpc_exec(MP_SYNC_MOTION, sizeof(req), req, sizeof(reply), reply) || reply[0] != 0xD2) return;
+    uint32_t total[5];
+    memcpy(total, reply + 1, sizeof(total));
+    int32_t d[5];
+    for (uint8_t k = 0; k < 5; k++) d[k] = (int32_t)(total[k] - seen[k]); // wraps like the totals
+    memcpy(seen, total, sizeof(seen));
+    // First fetch, or the other half restarted (its totals went back):
+    // start from here.
+    if (!have_seen || d[4] < 0 || d[4] > 1000) {
+        have_seen = true;
+        return;
+    }
+    mp_drain_x += d[0];
+    mp_drain_y += d[1];
+    mp_drain_h += d[2];
+    mp_drain_v += d[3];
     uint16_t spacing;
-    memcpy(&spacing, reply + 10, sizeof(spacing));
-    if (reply[9]) {
-        const uint16_t frames = mp_remote_frames + reply[9];
-        mp_remote_frames      = frames > 255 ? 255 : frames;
+    memcpy(&spacing, reply + 21, sizeof(spacing));
+    if (d[4]) {
+        const int32_t frames = mp_remote_frames + d[4];
+        mp_remote_frames     = frames > 255 ? 255 : (uint8_t)frames;
         if (spacing >= 16 && spacing <= 40 * 16) mp_remote_frame_x16 = spacing;
     }
 }
@@ -2493,10 +2499,10 @@ static void mp_drain(void) {
                 f += ((int32_t)dt * 16 - f) / 4;
                 mp_motion_frame_x16 = (uint16_t)(f < 16 ? 16 : f);
             }
-            mp_motion_acc[0] += r.x;
-            mp_motion_acc[1] += r.y;
-            mp_motion_acc[2] += r.h;
-            mp_motion_acc[3] += r.v;
+            mp_motion_acc[0] += (uint32_t)(int32_t)r.x;
+            mp_motion_acc[1] += (uint32_t)(int32_t)r.y;
+            mp_motion_acc[2] += (uint32_t)(int32_t)r.h;
+            mp_motion_acc[3] += (uint32_t)(int32_t)r.v;
             mp_motion_acc[4] += 1;
         }
         return;
