@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 25
+#define MP_REVISION 26
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -2389,6 +2389,10 @@ bool via_command_kb(uint8_t *data, uint8_t length) {
 #if defined(POINTING_DEVICE_DRIVER_digitizer) && defined(POINTING_DEVICE_ENABLE) && !defined(MATRIX_POINTING_NO_DRAIN)
 extern const pointing_device_driver_t digitizer_pointing_device_driver;
 static int32_t mp_drain_x = 0, mp_drain_y = 0, mp_drain_h = 0, mp_drain_v = 0;
+// Movement from the other half (revision 26): sensor frames in what was
+// fetched since the last report, and their spacing (ms x16).
+static uint8_t  mp_remote_frames    = 0;
+static uint16_t mp_remote_frame_x16 = 8 * 16;
 
 static bool mp_pointing_on_this_side(void) {
 #    if defined(SPLIT_POINTING_ENABLE) && defined(POINTING_DEVICE_LEFT)
@@ -2411,15 +2415,19 @@ static bool mp_pointing_on_this_side(void) {
 //   config.h: #define MATRIX_POINTING_SPLIT_MOTION
 //             add MP_SYNC_MOTION to SPLIT_TRANSACTION_IDS_USER
 #        define MP_REMOTE_MOTION
-#        define MP_MOTION_POLL_MS 8
+#        define MP_MOTION_POLL_MS 4
 // Written only by the main loop (collected) and by the transport handler
-// (sent), so neither needs a lock.
-static volatile int32_t mp_motion_acc[4]  = {0}; // x, y, h, v collected
-static volatile int32_t mp_motion_sent[4] = {0};
+// (sent), so neither needs a lock. Index 4 counts the sensor frames
+// (passes that had movement); their spacing goes along (revision 26), so
+// the USB half's smoothing and acceleration see the real frame timing
+// rather than the polling.
+static volatile int32_t  mp_motion_acc[5]  = {0}; // x, y, h, v, frames collected
+static volatile int32_t  mp_motion_sent[5] = {0};
+static volatile uint16_t mp_motion_frame_x16 = 8 * 16; // frame spacing, ms x16
 
 static void mp_motion_slave(uint8_t in_len, const void *in, uint8_t out_len, void *out) {
     uint8_t *o = (uint8_t *)out;
-    if (out_len < 9) return;
+    if (out_len < 12) return;
     o[0] = 0xD1; // marker
     for (uint8_t k = 0; k < 4; k++) {
         int32_t d = mp_motion_acc[k] - mp_motion_sent[k];
@@ -2429,6 +2437,12 @@ static void mp_motion_slave(uint8_t in_len, const void *in, uint8_t out_len, voi
         const int16_t v = (int16_t)d;
         memcpy(o + 1 + k * 2, &v, 2);
     }
+    int32_t frames = mp_motion_acc[4] - mp_motion_sent[4];
+    if (frames > 255) frames = 255;
+    mp_motion_sent[4] += frames;
+    o[9]                 = (uint8_t)frames;
+    const uint16_t spacing = mp_motion_frame_x16;
+    memcpy(o + 10, &spacing, 2);
 }
 
 static void mp_motion_register(void) {
@@ -2442,8 +2456,8 @@ static void mp_motion_master(void) {
     if (!is_transport_connected()) return;
     // Only with the same build on the other half (see the EEPROM mirror).
     if (mp_peer_state != 1 || mp_peer_build != mp_build_id()) return;
-    const uint8_t req[1]   = {0};
-    uint8_t       reply[9] = {0};
+    const uint8_t req[1]    = {0};
+    uint8_t       reply[12] = {0};
     if (!transaction_rpc_exec(MP_SYNC_MOTION, sizeof(req), req, sizeof(reply), reply) || reply[0] != 0xD1) return;
     int16_t v[4];
     memcpy(v, reply + 1, sizeof(v));
@@ -2451,6 +2465,13 @@ static void mp_motion_master(void) {
     mp_drain_y += v[1];
     mp_drain_h += v[2];
     mp_drain_v += v[3];
+    uint16_t spacing;
+    memcpy(&spacing, reply + 10, sizeof(spacing));
+    if (reply[9]) {
+        const uint16_t frames = mp_remote_frames + reply[9];
+        mp_remote_frames      = frames > 255 ? 255 : frames;
+        if (spacing >= 16 && spacing <= 40 * 16) mp_remote_frame_x16 = spacing;
+    }
 }
 #    else
 static void mp_motion_register(void) {}
@@ -2463,10 +2484,21 @@ static void mp_drain(void) {
         // The touchpad half without USB: collect for the master.
         if (!mp_pointing_on_this_side()) return;
         const report_mouse_t r = digitizer_pointing_device_driver.get_report(empty);
-        mp_motion_acc[0] += r.x;
-        mp_motion_acc[1] += r.y;
-        mp_motion_acc[2] += r.h;
-        mp_motion_acc[3] += r.v;
+        if (r.x || r.y || r.h || r.v) {
+            static uint16_t last_frame = 0;
+            const uint16_t  dt         = timer_elapsed(last_frame);
+            last_frame                 = timer_read();
+            if (dt >= 1 && dt <= 40) {
+                int32_t f = mp_motion_frame_x16;
+                f += ((int32_t)dt * 16 - f) / 4;
+                mp_motion_frame_x16 = (uint16_t)(f < 16 ? 16 : f);
+            }
+            mp_motion_acc[0] += r.x;
+            mp_motion_acc[1] += r.y;
+            mp_motion_acc[2] += r.h;
+            mp_motion_acc[3] += r.v;
+            mp_motion_acc[4] += 1;
+        }
         return;
     }
     if (!mp_pointing_on_this_side()) {
@@ -2484,7 +2516,15 @@ static void mp_drain(void) {
     mp_drain_v += r.v;
 }
 
+// Frames in the movement just added from the other half (0: this half's
+// sensor), for the smoothing.
+static uint8_t  mp_batch_frames    = 0;
+static uint16_t mp_batch_frame_x16 = 8 * 16;
+
 static report_mouse_t mp_add_drained(report_mouse_t r) {
+    mp_batch_frames    = mp_remote_frames;
+    mp_batch_frame_x16 = mp_remote_frame_x16;
+    mp_remote_frames   = 0;
     int32_t x = r.x + mp_drain_x, y = r.y + mp_drain_y;
     int32_t h = r.h + mp_drain_h, v = r.v + mp_drain_v;
     mp_drain_x = mp_drain_y = mp_drain_h = mp_drain_v = 0;
@@ -2496,6 +2536,8 @@ static report_mouse_t mp_add_drained(report_mouse_t r) {
     return r;
 }
 #else
+static uint8_t                               mp_batch_frames    = 0;
+static uint16_t                              mp_batch_frame_x16 = 8 * 16;
 static void                                  mp_drain(void) {}
 static void                                  mp_motion_register(void) {}
 static __attribute__((unused)) report_mouse_t mp_add_drained(report_mouse_t r) {
@@ -3020,7 +3062,16 @@ static report_mouse_t mp_smooth(report_mouse_t r, int32_t x, int32_t y) {
 
     const bool frame = x || y || r.h || r.v;
     uint16_t   dt    = 0;
-    if (frame) {
+    // Movement fetched from the other half comes in batches of sensor
+    // frames: time it by the frames, not by when it arrived (revision 26).
+    const uint8_t batch = frame ? mp_batch_frames : 0;
+    if (batch) {
+        frame_x16 = mp_batch_frame_x16;
+        if (frame_x16 < 2 * 16) frame_x16 = 2 * 16;
+        if (frame_x16 > 20 * 16) frame_x16 = 20 * 16;
+        dt         = (uint16_t)((frame_x16 * batch + 8) / 16);
+        last_frame = now;
+    } else if (frame) {
         dt         = now - last_frame;
         last_frame = now;
         if (dt >= 1 && dt <= 40) {
@@ -3048,7 +3099,8 @@ static report_mouse_t mp_smooth(report_mouse_t r, int32_t x, int32_t y) {
         const int64_t scale = (int64_t)mp_config.cpi * gain;
         pend_x += (int32_t)(x * scale / MATRIX_POINTING_NATIVE_CPI);
         pend_y += (int32_t)(y * scale / MATRIX_POINTING_NATIVE_CPI);
-        pend_until = now + (smooth ? (uint16_t)(frame_x16 / 16) : 0);
+        // A batch of frames is spread over the time it took.
+        pend_until = now + (smooth ? (uint16_t)(frame_x16 * (batch ? batch : 1) / 16) : 0);
     }
     int32_t ex = mp_spread(pend_x, pend_until, now, elapsed);
     int32_t ey = mp_spread(pend_y, pend_until, now, elapsed);
