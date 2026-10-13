@@ -100,6 +100,25 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
                         directions={[t('Counter-clockwise'), t('Clockwise')]}
                         onChange={(kc) => turn.set(knob.encoderId, kc)}
                       />
+                      {turn.layerCount > 1 && (
+                        <div className="knob-all-layers">
+                          {turn.sameOnAllLayers(knob.encoderId) ? (
+                            <span className="help">
+                              {t('Same on all layers')}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="mx-btn mx-press"
+                              onClick={() =>
+                                turn.applyToAllLayers(knob.encoderId)
+                              }
+                            >
+                              {t('Use on all layers')}
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <div className="knob-any-keys">
                         {[t('Counter-clockwise'), t('Clockwise')].map(
                           (dirName, dir) => {
@@ -288,20 +307,51 @@ function useKnobTurn() {
       };
     });
 
-  // One direction (0 counter-clockwise, 1 clockwise) to a keymap.
-  const setOne = (encoderId: number, dir: number, keymap: IKeymap) => {
-    const knob = knobs.find((k) => k.encoderId === encoderId);
-    if (!knob) return;
+  // One direction (0 counter-clockwise, 1 clockwise) to a keymap, on the
+  // selected layer or another one.
+  const setOne = (
+    encoderId: number,
+    dir: number,
+    keymap: IKeymap,
+    onLayer = layer
+  ) => {
+    const current = encodersKeymaps[onLayer]?.[encoderId];
+    if (!current) return;
     const op = dir === 1 ? 'cw' : 'ccw';
-    const remapped = encodersRemaps[layer]?.[encoderId];
-    const original = knob.original[dir];
+    const remapped = encodersRemaps[onLayer]?.[encoderId];
+    const original = dir === 1 ? current.clockwise : current.counterclockwise;
     if (original && original.code === keymap.code) {
       if (dir === 1 ? remapped?.clockwise : remapped?.counterclockwise) {
-        dispatch(AppActions.encodersRemapsRemoveKey(layer, encoderId, op));
+        dispatch(AppActions.encodersRemapsRemoveKey(onLayer, encoderId, op));
       }
       return;
     }
-    dispatch(AppActions.encodersRemapsSetKey(layer, encoderId, keymap, op));
+    dispatch(AppActions.encodersRemapsSetKey(onLayer, encoderId, keymap, op));
+  };
+  // The selected layer's turning keys to every layer.
+  const applyToAllLayers = (encoderId: number) => {
+    const current = encodersKeymaps[layer]?.[encoderId];
+    const remapped = encodersRemaps[layer]?.[encoderId];
+    const ccw = remapped?.counterclockwise || current?.counterclockwise;
+    const cw = remapped?.clockwise || current?.clockwise;
+    for (let l = 0; l < encodersKeymaps.length; l++) {
+      if (l === layer) continue;
+      if (ccw) setOne(encoderId, 0, ccw, l);
+      if (cw) setOne(encoderId, 1, cw, l);
+    }
+  };
+  // Whether every layer turns the same as the selected one.
+  const sameOnAllLayers = (encoderId: number) => {
+    const code = (l: number, dir: number) => {
+      const r = encodersRemaps[l]?.[encoderId];
+      const c = encodersKeymaps[l]?.[encoderId];
+      return dir === 1
+        ? (r?.clockwise || c?.clockwise)?.code
+        : (r?.counterclockwise || c?.counterclockwise)?.code;
+    };
+    return encodersKeymaps.every(
+      (_, l) => code(l, 0) === code(layer, 0) && code(l, 1) === code(layer, 1)
+    );
   };
   const set = (encoderId: number, codes: [number, number]) => {
     codes.forEach((code, dir) =>
@@ -317,6 +367,9 @@ function useKnobTurn() {
     knobs,
     set,
     setOne,
+    applyToAllLayers,
+    sameOnAllLayers,
+    layerCount: encodersKeymaps.length,
     layerLabel: `${layer} · ${layerName(layerMeta, layer)}`,
   };
 }

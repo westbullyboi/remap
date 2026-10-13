@@ -884,5 +884,7 @@
   "Push": "Push",
   "The key sent when you push the knob, set in the key settings.": "The key sent when you push the knob, set in the key settings.",
   "Change the push key": "Change the push key",
-  "Pick a key for {{direction}}.": "Pick a key for {{direction}}."
+  "Pick a key for {{direction}}.": "Pick a key for {{direction}}.",
+  "Use on all layers": "Use on all layers",
+  "Same on all layers": "Same on all layers"
 }

@@ -977,5 +977,7 @@
   "Push": "押す",
   "The key sent when you push the knob, set in the key settings.": "ノブを押したときに送るキーです。キー設定で変更します。",
   "Change the push key": "押したときのキーを変更",
-  "Pick a key for {{direction}}.": "{{direction}}に割り当てるキーを選んでください。"
+  "Pick a key for {{direction}}.": "{{direction}}に割り当てるキーを選んでください。",
+  "Use on all layers": "全レイヤーに適用",
+  "Same on all layers": "全レイヤー共通"
 }
