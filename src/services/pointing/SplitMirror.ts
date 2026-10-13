@@ -44,3 +44,22 @@ export async function chooseMirrorSide(
     1
   );
 }
+
+// Touchpad movement fetched from the other half in the last second
+// (firmware r28, value 0xA9): null on older firmware or when the
+// touchpad is on the USB half (all zero).
+export const MOTION_STATS_ID = 0xa9;
+export type MotionStats = { ok: number; failed: number; frames: number };
+export async function fetchMotionStats(
+  keyboard: IKeyboard
+): Promise<MotionStats | null> {
+  const r = await keyboard.fetchCustomValue(MOTION_STATS_ID, 4);
+  if (!r.success || r.unhandled || r.value === undefined) return null;
+  const v = r.value >>> 0;
+  const stats = {
+    ok: (v >>> 24) & 0xff,
+    failed: (v >>> 16) & 0xff,
+    frames: v & 0xffff,
+  };
+  return stats.ok || stats.failed ? stats : null;
+}

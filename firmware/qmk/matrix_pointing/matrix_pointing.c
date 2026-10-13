@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 27
+#define MP_REVISION 28
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -2442,6 +2442,27 @@ static void mp_motion_register(void) {
     transaction_register_rpc(MP_SYNC_MOTION, mp_motion_slave);
 }
 
+// Diagnostics (value 0xA9, revision 28): over the last second, fetches
+// that worked / failed and the sensor frames that came with them.
+static uint16_t mp_motion_stat[3]      = {0}; // this second: ok, failed, frames
+static uint16_t mp_motion_last_stat[3] = {0}; // the second before
+static void     mp_motion_stat_tick(void) {
+    static uint16_t start = 0;
+    if (timer_elapsed(start) < 1000) return;
+    start = timer_read();
+    memcpy(mp_motion_last_stat, mp_motion_stat, sizeof(mp_motion_stat));
+    memset(mp_motion_stat, 0, sizeof(mp_motion_stat));
+}
+
+// [fetches ok, failed (1 byte each, up to 255), sensor frames (2 bytes)].
+bool matrix_pointing_motion_stats(uint8_t *data) {
+    data[0] = mp_motion_last_stat[0] > 255 ? 255 : mp_motion_last_stat[0];
+    data[1] = mp_motion_last_stat[1] > 255 ? 255 : mp_motion_last_stat[1];
+    data[2] = mp_motion_last_stat[2] >> 8;
+    data[3] = mp_motion_last_stat[2] & 0xFF;
+    return true;
+}
+
 static void mp_motion_master(void) {
     static uint16_t last = 0;
     if (timer_elapsed(last) < MP_MOTION_POLL_MS) return;
@@ -2455,7 +2476,12 @@ static void mp_motion_master(void) {
     }
     const uint8_t req[1]    = {0};
     uint8_t       reply[23] = {0};
-    if (!transaction_rpc_exec(MP_SYNC_MOTION, sizeof(req), req, sizeof(reply), reply) || reply[0] != 0xD2) return;
+    mp_motion_stat_tick();
+    if (!transaction_rpc_exec(MP_SYNC_MOTION, sizeof(req), req, sizeof(reply), reply) || reply[0] != 0xD2) {
+        mp_motion_stat[1]++;
+        return;
+    }
+    mp_motion_stat[0]++;
     uint32_t total[5];
     memcpy(total, reply + 1, sizeof(total));
     int32_t d[5];
@@ -2471,6 +2497,7 @@ static void mp_motion_master(void) {
     mp_drain_y += d[1];
     mp_drain_h += d[2];
     mp_drain_v += d[3];
+    mp_motion_stat[2] += d[4];
     uint16_t spacing;
     memcpy(&spacing, reply + 21, sizeof(spacing));
     if (d[4]) {
@@ -2527,18 +2554,28 @@ static void mp_drain(void) {
 static uint8_t  mp_batch_frames    = 0;
 static uint16_t mp_batch_frame_x16 = 8 * 16;
 
+// The movement (sensor units) with what was collected added, unclamped:
+// the report's x / y hold only -127..127, and movement fetched from the
+// other half comes in 4 ms batches that go past that when the finger moves
+// fast, which made the cursor slower there (revision 28).
+static int32_t mp_drained_x = 0, mp_drained_y = 0;
+
 static report_mouse_t mp_add_drained(report_mouse_t r) {
     mp_batch_frames    = mp_remote_frames;
     mp_batch_frame_x16 = mp_remote_frame_x16;
     mp_remote_frames   = 0;
-    int32_t x = r.x + mp_drain_x, y = r.y + mp_drain_y;
-    int32_t h = r.h + mp_drain_h, v = r.v + mp_drain_v;
-    mp_drain_x = mp_drain_y = mp_drain_h = mp_drain_v = 0;
-    r.x = x < MOUSE_REPORT_XY_MIN ? MOUSE_REPORT_XY_MIN : x > MOUSE_REPORT_XY_MAX ? MOUSE_REPORT_XY_MAX : x;
-    r.y = y < MOUSE_REPORT_XY_MIN ? MOUSE_REPORT_XY_MIN : y > MOUSE_REPORT_XY_MAX ? MOUSE_REPORT_XY_MAX : y;
+    mp_drained_x = r.x + mp_drain_x;
+    mp_drained_y = r.y + mp_drain_y;
+    int32_t h    = r.h + mp_drain_h, v = r.v + mp_drain_v;
+    mp_drain_x = mp_drain_y = 0;
+    r.x = mp_drained_x < MOUSE_REPORT_XY_MIN ? MOUSE_REPORT_XY_MIN : mp_drained_x > MOUSE_REPORT_XY_MAX ? MOUSE_REPORT_XY_MAX : mp_drained_x;
+    r.y = mp_drained_y < MOUSE_REPORT_XY_MIN ? MOUSE_REPORT_XY_MIN : mp_drained_y > MOUSE_REPORT_XY_MAX ? MOUSE_REPORT_XY_MAX : mp_drained_y;
+    // Scroll past the report's range waits for the next report.
     const int32_t hv_max = sizeof(mouse_hv_report_t) == 1 ? INT8_MAX : INT16_MAX;
-    r.h = h < -hv_max ? -hv_max : h > hv_max ? hv_max : h;
-    r.v = v < -hv_max ? -hv_max : v > hv_max ? hv_max : v;
+    r.h        = h < -hv_max ? -hv_max : h > hv_max ? hv_max : h;
+    r.v        = v < -hv_max ? -hv_max : v > hv_max ? hv_max : v;
+    mp_drain_h = h - r.h;
+    mp_drain_v = v - r.v;
     return r;
 }
 #else
@@ -2546,7 +2583,10 @@ static uint8_t                               mp_batch_frames    = 0;
 static uint16_t                              mp_batch_frame_x16 = 8 * 16;
 static void                                  mp_drain(void) {}
 static void                                  mp_motion_register(void) {}
+static int32_t                               mp_drained_x = 0, mp_drained_y = 0;
 static __attribute__((unused)) report_mouse_t mp_add_drained(report_mouse_t r) {
+    mp_drained_x = r.x;
+    mp_drained_y = r.y;
     return r;
 }
 #endif
@@ -2921,6 +2961,16 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
             if (mp_combo_get_value(*value_id, value_data, length - 3)) return;
             if (mp_os_get_value(*value_id, value_data)) return;
             if (mp_mirror_get_value(*value_id, value_data)) return;
+            if (*value_id == 0xA9) {
+                // Touchpad movement fetched from the other half in the last
+                // second: [fetches ok, failed, sensor frames (2 bytes)];
+                // zeros when the touchpad is on this half.
+                memset(value_data, 0, 4);
+#if defined(POINTING_DEVICE_DRIVER_digitizer) && defined(POINTING_DEVICE_ENABLE) && defined(SPLIT_KEYBOARD) && defined(MATRIX_POINTING_SPLIT_SYNC) && defined(MATRIX_POINTING_SPLIT_MOTION) && !defined(MATRIX_POINTING_NO_DRAIN)
+                matrix_pointing_motion_stats(value_data);
+#endif
+                return;
+            }
             const mp_field_t *field = mp_find_field(*value_id);
             const void       *block = &mp_config;
             if (field == NULL) {
@@ -3221,8 +3271,8 @@ report_mouse_t matrix_pointing_task(report_mouse_t r) {
     mp_bootloader_check();
     r         = mp_add_drained(r);
     r.buttons = mp_filter_buttons(r.buttons);
-    int32_t x = r.x;
-    int32_t y = r.y;
+    int32_t x = mp_drained_x;
+    int32_t y = mp_drained_y;
 
     // Same convention as QMK's POINTING_DEVICE_ROTATION_*.
     switch (mp_config.rotation) {

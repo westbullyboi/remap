@@ -27,6 +27,7 @@ import { matrixDeviceData } from '../../../services/matrix/MatrixDeviceData';
 import { firmwareFlasherStore } from '../firmware/firmwareFlasherStore';
 import RgbMatrixCard from '../lighting/RgbMatrixCard';
 import { EdgeZonesCard } from './EdgeZonesCard';
+import MotionStatsLine from '../split/MotionStatsLine';
 import { KeyGuideCard } from './KeyGuideCard';
 import { SensitivityCard } from './SensitivityCard';
 import { SmoothnessCard } from './SmoothnessCard';
@@ -371,6 +372,9 @@ export default function PointingSettings(props: PointingSettingsProps) {
 
       <div className="pointing-body">
         <div className="pointing-sections">
+          {props.mode === 'touchpad' && live && props.keyboard && (
+            <MotionStatsLine keyboard={props.keyboard} />
+          )}
           {props.mode === 'touchpad' && live && props.keyboard && (
             <SmoothnessCard keyboard={props.keyboard} />
           )}
