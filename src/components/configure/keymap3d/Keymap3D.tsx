@@ -51,6 +51,16 @@ type Keymap3DProps = {
   onMiss: () => void;
   // The LEDs as they light up (Lighting settings open), null: not shown.
   lighting?: LedPreview | null;
+  // The layer shown: changing it flips the keys over to the new legends.
+  layer?: number;
+  // Layer stack view: the keys of every layer, one keyboard per layer
+  // stacked upwards (layer 0 at the bottom), `stackGap` apart.
+  stack?: Keymap3DKey[][] | null;
+  stackGap?: number;
+  stackNames?: string[];
+  // A key picked in the stack view, with its layer.
+  // eslint-disable-next-line no-unused-vars
+  onPickInLayer?: (layer: number, pos: string) => void;
   // A keycode dragged from the palette was dropped on the key at `pos`.
   // eslint-disable-next-line no-unused-vars
   onDropKey?: (pos: string) => void;
@@ -67,12 +77,26 @@ export type LedPreview = {
 
 const FOV = 32;
 const TILT = 0.62; // radians from straight down
+const STACK_TILT = 0.98; // more from the side for the layer stack
+// Flip of the keys on a layer change: length and left-to-right spread.
+const FLIP_SECONDS = 0.42;
+const FLIP_SPREAD = 0.32;
 const CAP_HEIGHT = 0.42;
 const CAP_GAP = 0.1;
 
 export default function Keymap3D(props: Keymap3DProps) {
   // The key under a keycode being dragged over the keyboard.
   const [dropPos, setDropPos] = useState<string | null>(null);
+  const stack = props.stack && props.stack.length > 0 ? props.stack : null;
+  const gap = props.stackGap ?? 1.4;
+  const flipOn = useMemo(
+    () =>
+      !(
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ),
+    []
+  );
   return (
     <Canvas
       className="keymap3d-canvas"
@@ -89,33 +113,72 @@ export default function Keymap3D(props: Keymap3DProps) {
         bounds={props.bounds}
         focusPos={props.focusPos}
         side={props.side}
+        stackHeight={stack ? (stack.length - 1) * gap : 0}
+        focusY={stack ? (props.layer ?? 0) * gap : 0}
       />
-      <AnimatedKeyboard>
-        {props.plates.map((plate, i) => (
-          <PlateMesh key={i} plate={plate} />
-        ))}
-        {props.touchpad && (
-          <TouchpadMesh area={props.touchpad} onPick={props.onTouchpad} />
-        )}
-        {props.lighting && (
-          <LedOverlay
-            keys={props.keys}
-            bounds={props.bounds}
-            lighting={props.lighting}
-          />
-        )}
-        {props.keys.map((k) => (
-          <Keycap3D
-            key={k.key.model.location}
-            data={k}
-            selected={
-              !!k.key.model.pos && k.key.model.pos === props.selectedPos
-            }
-            dropTarget={!!k.key.model.pos && k.key.model.pos === dropPos}
-            onPick={props.onPick}
-          />
-        ))}
-      </AnimatedKeyboard>
+      {stack ? (
+        <AnimatedKeyboard>
+          {stack.map((keys, layer) => (
+            <group key={layer} position={[0, layer * gap, 0]}>
+              {props.plates.map((plate, i) => (
+                <PlateMesh key={i} plate={plate} />
+              ))}
+              <LayerTag
+                bounds={props.bounds}
+                text={`L${layer}  ${props.stackNames?.[layer] || ''}`}
+                current={layer === props.layer}
+              />
+              {keys.map((k) => (
+                <Keycap3D
+                  key={k.key.model.location}
+                  data={k}
+                  selected={
+                    layer === props.layer &&
+                    !!k.key.model.pos &&
+                    k.key.model.pos === props.selectedPos
+                  }
+                  onPick={(pos) => props.onPickInLayer?.(layer, pos)}
+                />
+              ))}
+            </group>
+          ))}
+        </AnimatedKeyboard>
+      ) : (
+        <AnimatedKeyboard>
+          {props.plates.map((plate, i) => (
+            <PlateMesh key={i} plate={plate} />
+          ))}
+          {props.touchpad && (
+            <TouchpadMesh area={props.touchpad} onPick={props.onTouchpad} />
+          )}
+          {props.lighting && (
+            <LedOverlay
+              keys={props.keys}
+              bounds={props.bounds}
+              lighting={props.lighting}
+            />
+          )}
+          {props.keys.map((k) => (
+            <Keycap3D
+              key={k.key.model.location}
+              data={k}
+              selected={
+                !!k.key.model.pos && k.key.model.pos === props.selectedPos
+              }
+              dropTarget={!!k.key.model.pos && k.key.model.pos === dropPos}
+              onPick={props.onPick}
+              flip={
+                flipOn
+                  ? {
+                      token: props.layer ?? 0,
+                      delay: flipDelay(k.key.x, props.bounds),
+                    }
+                  : undefined
+              }
+            />
+          ))}
+        </AnimatedKeyboard>
+      )}
       {props.onDropKey && (
         <DropTarget onHover={setDropPos} onDrop={props.onDropKey} />
       )}
@@ -343,35 +406,88 @@ function DropTarget(props: {
   return null;
 }
 
+// Keys flip one after the other from left to right.
+function flipDelay(x: number, bounds: Bounds): number {
+  const width = Math.max(bounds.maxX - bounds.minX, 1);
+  return ((x - bounds.minX) / width) * FLIP_SPREAD;
+}
+
+// Name of a layer beside its keyboard in the stack view (drawn after the
+// dithering, like the legends).
+function LayerTag(props: { bounds: Bounds; text: string; current: boolean }) {
+  const texture = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 96;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = props.current ? '#0e0e10' : 'rgba(255,255,255,0.92)';
+    const r = 40;
+    ctx.beginPath();
+    ctx.moveTo(r, 4);
+    ctx.arcTo(508, 4, 508, 92, r);
+    ctx.arcTo(508, 92, 4, 92, r);
+    ctx.arcTo(4, 92, 4, 4, r);
+    ctx.arcTo(4, 4, 508, 4, r);
+    ctx.fill();
+    ctx.fillStyle = props.current ? '#ffffff' : '#0e0e10';
+    ctx.font = '600 44px Inter, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(props.text.slice(0, 18), 32, 50);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }, [props.text, props.current]);
+  useEffect(() => () => texture.dispose(), [texture]);
+  return (
+    <mesh
+      position={[props.bounds.minX - 2.4, 0.05, props.bounds.minZ + 0.5]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      layers={1}
+    >
+      <planeGeometry args={[3.6, 0.68]} />
+      <meshBasicMaterial map={texture} transparent toneMapped={false} />
+    </mesh>
+  );
+}
+
 // Eases the camera to the overview or to the focused key.
 function CameraRig(props: {
   keys: Keymap3DKey[];
   bounds: Bounds;
   focusPos: string | null;
   side: number;
+  // Stack view: height of the stack and the height of the shown layer.
+  stackHeight?: number;
+  focusY?: number;
 }) {
   const { camera, size } = useThree();
+  const stackHeight = props.stackHeight || 0;
+  // Look at a stack more from the side, so the layers come apart.
+  const tilt = stackHeight > 0 ? STACK_TILT : TILT;
   const aspect = size.width / Math.max(size.height, 1);
   const view: CameraView = useMemo(() => {
     const focused = props.focusPos
       ? props.keys.find((k) => k.key.model.pos === props.focusPos)
       : undefined;
     return focused
-      ? focusView(focused.key, FOV, aspect, TILT, props.side)
-      : overviewView(props.bounds, FOV, aspect, TILT, props.side);
-  }, [props.keys, props.bounds, props.focusPos, props.side, aspect]);
+      ? focusView(focused.key, FOV, aspect, tilt, props.side)
+      : overviewView(props.bounds, FOV, aspect, tilt, props.side);
+  }, [props.keys, props.bounds, props.focusPos, props.side, aspect, tilt]);
+  const focused = !!props.focusPos;
+  const targetY = focused ? props.focusY || 0 : stackHeight / 2;
+  const distance = focused ? view.distance : view.distance + stackHeight * 1.1;
 
   const target = useRef(new THREE.Vector3(view.targetX, 0, view.targetZ));
   const first = useRef(true);
   useFrame((_, delta) => {
-    const goal = new THREE.Vector3(view.targetX, 0, view.targetZ);
+    const goal = new THREE.Vector3(view.targetX, targetY, view.targetZ);
     const goalPos = goal
       .clone()
       .add(
         new THREE.Vector3(
           0,
-          view.distance * Math.cos(TILT),
-          view.distance * Math.sin(TILT)
+          distance * Math.cos(tilt),
+          distance * Math.sin(tilt)
         )
       );
     // Jump on the first frame, then ease (about 0.8s to settle).
@@ -427,8 +543,46 @@ function Keycap3D(props: {
   dropTarget?: boolean;
   // eslint-disable-next-line no-unused-vars
   onPick: (pos: string) => void;
+  // Flips over when `token` (the layer) changes, after `delay` seconds.
+  flip?: { token: number; delay: number };
 }) {
-  const { key, label, changed, encoder } = props.data;
+  const { key, changed, encoder } = props.data;
+  // The legend shown: on a layer change it switches halfway through the
+  // flip, otherwise at once.
+  const [label, setLabel] = useState(props.data.label);
+  const latest = useRef(props.data.label);
+  latest.current = props.data.label;
+  const flipToken = props.flip?.token;
+  const lastToken = useRef(flipToken);
+  const flipStart = useRef<number | null>(null);
+  const swapped = useRef(true);
+  const flipper = useRef<THREE.Group>(null);
+  useEffect(() => {
+    if (flipToken !== lastToken.current && props.flip) {
+      lastToken.current = flipToken;
+      flipStart.current = performance.now() / 1000 + props.flip.delay;
+      swapped.current = false;
+      return;
+    }
+    if (flipStart.current === null) setLabel(props.data.label);
+  }, [props.data.label, flipToken]);
+  useFrame(() => {
+    const el = flipper.current;
+    if (!el || flipStart.current === null) return;
+    const p = (performance.now() / 1000 - flipStart.current) / FLIP_SECONDS;
+    if (p < 0) return;
+    if (p >= 0.5 && !swapped.current) {
+      swapped.current = true;
+      setLabel(latest.current);
+    }
+    if (p >= 1) {
+      el.rotation.x = 0;
+      flipStart.current = null;
+      setLabel(latest.current);
+      return;
+    }
+    el.rotation.x = p < 0.5 ? p * Math.PI : (p - 1) * Math.PI;
+  });
   const pos = key.model.pos;
   const [hover, setHover] = useState(false);
   const group = useRef<THREE.Group>(null);
@@ -467,58 +621,62 @@ function Keycap3D(props: {
   return (
     <group position={[key.x, 0, key.z]} rotation={[0, key.angle, 0]}>
       <group ref={group} userData={pos ? { pos } : {}} {...handlers}>
-        {encoder ? (
-          <mesh position={[0, CAP_HEIGHT / 2, 0]}>
-            <cylinderGeometry
-              args={[
-                Math.min(w, d) * 0.46,
-                Math.min(w, d) * 0.48,
-                CAP_HEIGHT,
-                40,
-              ]}
-            />
-            <meshStandardMaterial
-              color={props.selected ? '#18191d' : '#454952'}
-              roughness={0.5}
-            />
-          </mesh>
-        ) : (
-          <RoundedBox
-            args={[w, CAP_HEIGHT, d]}
-            radius={0.08}
-            smoothness={3}
-            position={[0, CAP_HEIGHT / 2, 0]}
-          >
-            <meshStandardMaterial color={capColor} roughness={0.45} />
-          </RoundedBox>
-        )}
-        <mesh
-          position={[0, CAP_HEIGHT + 0.002, 0]}
-          rotation={[-Math.PI / 2, 0, 0]}
-          layers={1}
-        >
-          <planeGeometry args={[w * 0.92, d * 0.92]} />
-          <meshBasicMaterial map={texture} transparent toneMapped={false} />
-        </mesh>
-        {props.selected && (
-          <mesh
-            position={[0, 0.01, 0]}
-            rotation={[-Math.PI / 2, 0, 0]}
-            layers={1}
-          >
-            <planeGeometry args={[w + 0.16, d + 0.16]} />
-            <meshBasicMaterial color="#ffffff" transparent opacity={0.65} />
-          </mesh>
-        )}
-        {changed && (
-          <mesh
-            position={[w / 2 - 0.12, CAP_HEIGHT + 0.01, -d / 2 + 0.12]}
-            layers={1}
-          >
-            <sphereGeometry args={[0.08, 16, 16]} />
-            <meshBasicMaterial color="#ffffff" />
-          </mesh>
-        )}
+        <group ref={flipper} position={[0, CAP_HEIGHT / 2, 0]}>
+          <group position={[0, -CAP_HEIGHT / 2, 0]}>
+            {encoder ? (
+              <mesh position={[0, CAP_HEIGHT / 2, 0]}>
+                <cylinderGeometry
+                  args={[
+                    Math.min(w, d) * 0.46,
+                    Math.min(w, d) * 0.48,
+                    CAP_HEIGHT,
+                    40,
+                  ]}
+                />
+                <meshStandardMaterial
+                  color={props.selected ? '#18191d' : '#454952'}
+                  roughness={0.5}
+                />
+              </mesh>
+            ) : (
+              <RoundedBox
+                args={[w, CAP_HEIGHT, d]}
+                radius={0.08}
+                smoothness={3}
+                position={[0, CAP_HEIGHT / 2, 0]}
+              >
+                <meshStandardMaterial color={capColor} roughness={0.45} />
+              </RoundedBox>
+            )}
+            <mesh
+              position={[0, CAP_HEIGHT + 0.002, 0]}
+              rotation={[-Math.PI / 2, 0, 0]}
+              layers={1}
+            >
+              <planeGeometry args={[w * 0.92, d * 0.92]} />
+              <meshBasicMaterial map={texture} transparent toneMapped={false} />
+            </mesh>
+            {props.selected && (
+              <mesh
+                position={[0, 0.01, 0]}
+                rotation={[-Math.PI / 2, 0, 0]}
+                layers={1}
+              >
+                <planeGeometry args={[w + 0.16, d + 0.16]} />
+                <meshBasicMaterial color="#ffffff" transparent opacity={0.65} />
+              </mesh>
+            )}
+            {changed && (
+              <mesh
+                position={[w / 2 - 0.12, CAP_HEIGHT + 0.01, -d / 2 + 0.12]}
+                layers={1}
+              >
+                <sphereGeometry args={[0.08, 16, 16]} />
+                <meshBasicMaterial color="#ffffff" />
+              </mesh>
+            )}
+          </group>
+        </group>
       </group>
     </group>
   );

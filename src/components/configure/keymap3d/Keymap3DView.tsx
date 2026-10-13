@@ -23,6 +23,7 @@ import { KeymapPdfGenerator } from '../../../services/pdf/KeymapPdfGenerator';
 import './Keymap3DView.scss';
 
 import Keymap3D from './Keymap3D';
+import { layerName, useLayerMeta } from '../../../services/layers/LayerMeta';
 import { useLightingPreview } from '../../../services/lighting/LightingPreview';
 import { useMatrixDeviceData } from '../../../services/matrix/MatrixDeviceData';
 import {
@@ -160,6 +161,63 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
     [geometry, layerKeymaps, layerRemaps, labelLang]
   );
 
+  // Layer stack view: every layer's keyboard stacked; the wheel spreads
+  // the layers apart or closer.
+  const [stacked, setStacked] = useState(false);
+  const [stackGap, setStackGap] = useState(1.4);
+  const layerMeta = useLayerMeta(keyboard?.getInformation());
+  const stackLayers = Math.max(1, layerCount || 4);
+  const stack: Keymap3DKey[][] | null = useMemo(() => {
+    if (!stacked) return null;
+    return [...Array(stackLayers)].map((_, i) => {
+      const lk = keymaps[i] || {};
+      const lr = remaps[i] || {};
+      return geometry.keys.map((key) => {
+        const pos = key.model.pos;
+        const current = pos ? lr[pos] || lk[pos] : undefined;
+        return {
+          key,
+          label: current ? genKey(current, labelLang).label : '',
+          changed: !!pos && pos in lr,
+          encoder: key.model.isEncoder,
+        };
+      });
+    });
+  }, [stacked, stackLayers, keymaps, remaps, geometry, labelLang]);
+  const stackNames = useMemo(
+    () => [...Array(stackLayers)].map((_, i) => layerName(layerMeta, i)),
+    [stackLayers, layerMeta]
+  );
+  useEffect(() => {
+    if (!stacked) return;
+    const onWheel = (e: WheelEvent) => {
+      const target = e.target as Element | null;
+      if (!target?.closest?.('.keymap3d-canvas')) return;
+      e.preventDefault();
+      setStackGap((g) => Math.min(3.2, Math.max(0.6, g - e.deltaY * 0.002)));
+    };
+    window.addEventListener('wheel', onWheel, { passive: false });
+    return () => window.removeEventListener('wheel', onWheel);
+  }, [stacked]);
+  // A key picked on another layer of the stack: switch to that layer
+  // first, then open the key once its keymap is shown.
+  const [pendingPick, setPendingPick] = useState<string | null>(null);
+  const pickInLayer = (target: number, pos: string) => {
+    if (target === layer) {
+      pick(pos);
+      return;
+    }
+    dispatch(KeymapActions.clearSelectedKeyPosition());
+    dispatch(KeydiffActions.clearKeydiff());
+    dispatch(KeymapActions.updateSelectedLayer(target));
+    setPendingPick(pos);
+  };
+  useEffect(() => {
+    if (pendingPick === null) return;
+    setPendingPick(null);
+    pick(pendingPick);
+  }, [layer]);
+
   const close = () => {
     if (!open || closing) return;
     setClosing(true);
@@ -277,8 +335,13 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
           bounds={geometry.bounds}
           touchpad={geometry.touchpad}
           onTouchpad={() => openEditorView('touchpad')}
-          lighting={ledPreview}
-          onDropKey={dropKey}
+          lighting={stack ? null : ledPreview}
+          layer={layer}
+          stack={stack}
+          stackGap={stackGap}
+          stackNames={stackNames}
+          onPickInLayer={pickInLayer}
+          onDropKey={stack ? undefined : dropKey}
           selectedPos={windowShown ? selectedPos : null}
           focusPos={windowShown && !closing && !isOverview ? selectedPos : null}
           side={
@@ -346,6 +409,15 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
             L
           </button>
         </div>
+        <button
+          className={`mx-tool mx-press mx-glass ${stacked ? 'on' : ''}`}
+          aria-pressed={stacked}
+          onClick={() => setStacked(!stacked)}
+          title={t('Show all layers stacked (wheel: spacing)')}
+          style={{ border: 'none' }}
+        >
+          {t('Layer stack')}
+        </button>
         <button
           className="mx-tool mx-press mx-glass"
           disabled={unappliedCount === 0}

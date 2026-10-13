@@ -868,5 +868,7 @@
   "Pick a keycode to assign it to this key": "Pick a keycode to assign it to this key",
   "This keyboard has no macros (dynamic keymap macros are off).": "This keyboard has no macros (dynamic keymap macros are off).",
   "Choose a macro to edit. Assign it to a key with M0, M1... in the Keymap palette.": "Choose a macro to edit. Assign it to a key with M0, M1... in the Keymap palette.",
-  "Macros": "Macros"
+  "Macros": "Macros",
+  "Layer stack": "Layer stack",
+  "Show all layers stacked (wheel: spacing)": "Show all layers stacked (wheel: spacing)"
 }

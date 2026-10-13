@@ -961,5 +961,7 @@
   "Pick a keycode to assign it to this key": "キーコードを選ぶと、このキーに割り当てて閉じます",
   "This keyboard has no macros (dynamic keymap macros are off).": "このキーボードにはマクロがありません（ダイナミックキーマップのマクロが無効です）。",
   "Choose a macro to edit. Assign it to a key with M0, M1... in the Keymap palette.": "編集するマクロを選んでください。キーへの割り当ては、キー設定のパレットの M0、M1… で行います。",
-  "Macros": "マクロ"
+  "Macros": "マクロ",
+  "Layer stack": "レイヤー積層",
+  "Show all layers stacked (wheel: spacing)": "全レイヤーを積み重ねて表示（ホイールで間隔を調整）"
 }
