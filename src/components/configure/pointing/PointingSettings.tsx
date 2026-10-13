@@ -27,6 +27,7 @@ import { matrixDeviceData } from '../../../services/matrix/MatrixDeviceData';
 import { firmwareFlasherStore } from '../firmware/firmwareFlasherStore';
 import RgbMatrixCard from '../lighting/RgbMatrixCard';
 import { EdgeZonesCard } from './EdgeZonesCard';
+import { TouchpadModesCard } from './TouchpadModesCard';
 import MotionStatsLine from '../split/MotionStatsLine';
 import { KeyGuideCard } from './KeyGuideCard';
 import { SensitivityCard } from './SensitivityCard';
@@ -383,6 +384,9 @@ export default function PointingSettings(props: PointingSettingsProps) {
           )}
           {props.mode === 'touchpad' && live && props.keyboard && (
             <EdgeZonesCard keyboard={props.keyboard} />
+          )}
+          {props.mode === 'touchpad' && live && props.keyboard && (
+            <TouchpadModesCard keyboard={props.keyboard} />
           )}
           {props.mode === 'leds' && live && props.keyboard && (
             <RgbMatrixCard

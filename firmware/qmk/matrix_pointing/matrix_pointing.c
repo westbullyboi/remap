@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 29
+#define MP_REVISION 30
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -275,7 +275,8 @@ static bool        mp_loaded = false;
 #if defined(RGB_MATRIX_ENABLE) && !defined(MATRIX_POINTING_NO_LED_HOOK) && defined(MATRIX_POINTING_EXT_EEPROM_OFFSET)
 #    define MP_GUIDE // light only the assigned keys (revision 20)
 #endif
-#define MP_EXT_VERSION 7
+#define MP_EXT_VERSION 8
+#define MP_EXT_V7_SIZE 55 // version 7 (up to `layout_sig`)
 #define MP_EXT_V6_SIZE 53 // version 6 (up to `key_guide_dim`)
 #define MP_EXT_V5_SIZE 50 // version 5 (up to `touch_glow_fade`)
 #define MP_EXT_V4_SIZE 48 // version 4 (up to `touch_glow_color`)
@@ -329,6 +330,11 @@ typedef struct __attribute__((packed)) {
     uint8_t key_guide_dim;   // brightness of unassigned keys, % (0 = off)
     // version 7 (revision 21)
     uint16_t layout_sig; // MP_LAYOUT_SIG of the build that wrote the block
+    // version 8 (revision 30)
+    uint8_t tp_mode[3];     // touchpad while a Touchpad Mode key is held (MP_TPM_*)
+    uint8_t tp_step;        // mm of finger movement per key for the stepped modes
+    uint8_t edge_bar;       // 1 = show the finger's place on an edge slider on the LEDs
+    uint8_t edge_bar_color; // 0 = the lighting color, 2.. = like the layer colors
 } mp_ext_t;
 _Static_assert(sizeof(mp_ext_t) <= 64, "mp_ext_t must fit 64 bytes");
 _Static_assert(offsetof(mp_ext_t, accel_slow) == MP_EXT_V1_SIZE, "extension version 1 layout changed");
@@ -337,6 +343,7 @@ _Static_assert(offsetof(mp_ext_t, touch_glow) == MP_EXT_V3_SIZE, "extension vers
 _Static_assert(offsetof(mp_ext_t, touch_glow_radius) == MP_EXT_V4_SIZE, "extension version 4 layout changed");
 _Static_assert(offsetof(mp_ext_t, key_guide) == MP_EXT_V5_SIZE, "extension version 5 layout changed");
 _Static_assert(offsetof(mp_ext_t, layout_sig) == MP_EXT_V6_SIZE, "extension version 6 layout changed");
+_Static_assert(offsetof(mp_ext_t, tp_mode) == MP_EXT_V7_SIZE, "extension version 7 layout changed");
 
 // Touch sensor tuning: written to the sensor from the housekeeping task on
 // the half it is wired to (the slave half gets the values over the split
@@ -377,6 +384,9 @@ static const mp_ext_t mp_ext_defaults = {
     .touch_glow_fade   = 30,
     .key_guide         = 1,
     .layout_sig        = MP_LAYOUT_SIG,
+    .tp_mode           = {1, 3, 4}, // scroll, zoom, arrow keys
+    .tp_step           = 6,
+    .edge_bar          = 1,
 };
 static mp_ext_t mp_ext = {0};
 
@@ -399,7 +409,7 @@ static void mp_ext_load(void) {
     eeconfig_read_user_datablock(&mp_ext, MATRIX_POINTING_EXT_EEPROM_OFFSET, sizeof(mp_ext));
     // Older versions (1: revisions 12-13, 2: 14-16): keep their settings,
     // new fields get defaults.
-    static const uint8_t old_sizes[] = {0, MP_EXT_V1_SIZE, MP_EXT_V2_SIZE, MP_EXT_V3_SIZE, MP_EXT_V4_SIZE, MP_EXT_V5_SIZE, MP_EXT_V6_SIZE};
+    static const uint8_t old_sizes[] = {0, MP_EXT_V1_SIZE, MP_EXT_V2_SIZE, MP_EXT_V3_SIZE, MP_EXT_V4_SIZE, MP_EXT_V5_SIZE, MP_EXT_V6_SIZE, MP_EXT_V7_SIZE};
     if (mp_ext.magic == MP_EXT_MAGIC && mp_ext.version >= 1 && mp_ext.version < MP_EXT_VERSION) {
         const uint8_t size = old_sizes[mp_ext.version];
         if (mp_ext.checksum == mp_ext_checksum_n(&mp_ext, size)) {
@@ -675,7 +685,7 @@ bool matrix_pointing_keep_keymap(void) {
     if (via_eeprom_is_valid()) return false;
     mp_ext_t block;
     eeconfig_read_user_datablock(&block, MATRIX_POINTING_EXT_EEPROM_OFFSET, sizeof(block));
-    static const uint8_t sizes[] = {0, MP_EXT_V1_SIZE, MP_EXT_V2_SIZE, MP_EXT_V3_SIZE, MP_EXT_V4_SIZE, MP_EXT_V5_SIZE, MP_EXT_V6_SIZE, sizeof(mp_ext_t)};
+    static const uint8_t sizes[] = {0, MP_EXT_V1_SIZE, MP_EXT_V2_SIZE, MP_EXT_V3_SIZE, MP_EXT_V4_SIZE, MP_EXT_V5_SIZE, MP_EXT_V6_SIZE, MP_EXT_V7_SIZE, sizeof(mp_ext_t)};
     _Static_assert(ARRAY_SIZE(sizes) == MP_EXT_VERSION + 1, "add the size of the new extension version");
     if (block.magic != MP_EXT_MAGIC || block.version < 1 || block.version > MP_EXT_VERSION) return false;
     if (block.checksum != mp_ext_checksum_n(&block, sizes[block.version])) return false;
@@ -873,6 +883,13 @@ static const mp_field_t mp_ext_fields[] = {
     MP_EXT_FIELD(0x9E, key_guide, 0, 2),
     MP_EXT_FIELD(0x9F, key_guide_color, 0, 1),
     MP_EXT_FIELD(0xA0, key_guide_dim, 0, 50),
+    // 0xA1..0xA9: settings per OS, halves, diagnostics (handled separately)
+    MP_EXT_FIELD(0xAA, tp_mode[0], 0, 10),
+    MP_EXT_FIELD(0xAB, tp_mode[1], 0, 10),
+    MP_EXT_FIELD(0xAC, tp_mode[2], 0, 10),
+    MP_EXT_FIELD(0xAD, tp_step, 2, 30),
+    MP_EXT_FIELD(0xAE, edge_bar, 0, 1),
+    MP_EXT_FIELD(0xAF, edge_bar_color, 0, 8),
 };
 
 static const mp_field_t *mp_find_ext_field(uint8_t id) {
@@ -1354,16 +1371,9 @@ static volatile uint8_t mp_pending_corners             = 0;
 
 // Taps the keycode on the USB half; the other half queues it for the
 // master (collected with the swipes in mp_split_housekeeping()).
-static void mp_edge_emit(uint8_t edge, uint8_t forward) {
-#    if defined(SPLIT_KEYBOARD) && defined(MATRIX_POINTING_SPLIT_SYNC)
-    if (!mp_edge_is_master()) {
-        int8_t n = mp_pending_edge[edge];
-        if (forward && n < 100) mp_pending_edge[edge] = n + 1;
-        if (!forward && n > -100) mp_pending_edge[edge] = n - 1;
-        return;
-    }
-#    endif
-    const uint16_t keycode = mp_edge_kc(edge, forward ? 1 : 0);
+// Sends one keycode of the edges, knobs or touchpad modes: wheel keycodes
+// (with Ctrl etc.) as one notch, others as a tap (basic keys + modifiers).
+static void mp_send_keycode(uint16_t keycode) {
 #    ifdef MP_SMOOTH
     if (mp_is_mod_wheel(keycode)) {
         mp_mod_wheel(keycode);
@@ -1377,6 +1387,18 @@ static void mp_edge_emit(uint8_t edge, uint8_t forward) {
     }
 #    endif
     if (keycode != KC_NO && keycode <= QK_MODS_MAX) tap_code16(keycode);
+}
+
+static void mp_edge_emit(uint8_t edge, uint8_t forward) {
+#    if defined(SPLIT_KEYBOARD) && defined(MATRIX_POINTING_SPLIT_SYNC)
+    if (!mp_edge_is_master()) {
+        int8_t n = mp_pending_edge[edge];
+        if (forward && n < 100) mp_pending_edge[edge] = n + 1;
+        if (!forward && n > -100) mp_pending_edge[edge] = n - 1;
+        return;
+    }
+#    endif
+    mp_send_keycode(mp_edge_kc(edge, forward ? 1 : 0));
 }
 
 static void mp_corner_emit(uint8_t corner) {
@@ -1469,6 +1491,7 @@ static void mp_touch_start(uint8_t i, int16_t u, int16_t v, uint8_t fingers) {
 }
 
 static void mp_glow_update(const digitizer_t *state);
+static void mp_bar_note(uint8_t edge, uint16_t pos);
 
 bool matrix_pointing_digitizer(digitizer_t *const state) {
     if (!mp_edge_on_this_side()) return false;
@@ -1521,6 +1544,13 @@ bool matrix_pointing_digitizer(digitizer_t *const state) {
                     t->travel += step;
                     t->stepped = true;
                     mp_edge_emit(t->zone, 0);
+                }
+                if (t->stepped) {
+                    // The finger's place along the edge, from its start.
+                    int16_t pos = t->zone < 2 ? (int16_t)(MP_EDGE_SCALE - v) : u;
+                    if (pos < 0) pos = 0;
+                    if (pos > MP_EDGE_SCALE) pos = MP_EDGE_SCALE;
+                    mp_bar_note(t->zone, pos);
                 }
             }
         }
@@ -1645,9 +1675,22 @@ typedef struct {
     bool     active;
     uint16_t u, v;
     uint16_t since; // when it was last touched (fade out after lifting)
+    // Edge slider bar (revision 30): the finger's place along the edge in
+    // use (0..MP_EDGE_SCALE from the start: bottom for the side edges,
+    // left for the top / bottom edges), shown instead of the glow.
+    uint8_t  bar;      // 0 none, else edge + 1
+    uint16_t bar_pos;
+    uint16_t bar_time; // last step
 } mp_glow_t;
 static mp_glow_t mp_glow_local  = {0};
 static mp_glow_t mp_glow_remote = {0};
+static uint8_t   mp_bar_synced[2] = {1, 0}; // edge bar on, color (the USB half's)
+static void      mp_bar_note(uint8_t edge, uint16_t pos) {
+    mp_glow_local.bar      = edge + 1;
+    mp_glow_local.bar_pos  = pos;
+    mp_glow_local.bar_time = timer_read();
+}
+#    define MP_BAR_HOLD_MS 700 // the bar stays this long after the last step
 
 static void mp_glow_update(const digitizer_t *state) {
     for (uint8_t i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
@@ -1676,6 +1719,15 @@ static uint8_t mp_glow_synced[4]    = {0};
 static bool    mp_glow_have_synced __attribute__((unused)) = false;
 
 static void mp_glow_pack(const mp_glow_t *g, uint8_t *o) {
+    // 3 = edge slider bar: [3, place (2), edge, 0] (revision 30)
+    if (g->bar && timer_elapsed(g->bar_time) < MP_BAR_HOLD_MS) {
+        o[0] = 3;
+        o[1] = g->bar_pos >> 8;
+        o[2] = g->bar_pos & 0xFF;
+        o[3] = g->bar - 1;
+        o[4] = 0;
+        return;
+    }
     o[0] = g->active ? 1 : (timer_elapsed(g->since) < 1000 ? 2 : 0); // 2 = just lifted
     o[1] = g->u >> 8;
     o[2] = g->u & 0xFF;
@@ -1684,12 +1736,128 @@ static void mp_glow_pack(const mp_glow_t *g, uint8_t *o) {
 }
 
 static void mp_glow_unpack(const uint8_t *in) {
+    if (in[0] == 3) {
+        mp_glow_remote.bar      = in[3] + 1;
+        mp_glow_remote.bar_pos  = (in[1] << 8) | in[2];
+        mp_glow_remote.bar_time = timer_read();
+        mp_glow_remote.active   = false;
+        mp_glow_remote.since    = 0; // no glow fading out behind the bar
+        return;
+    }
     const bool was = mp_glow_remote.active;
     if (in[0] == 0 && !was) return;
     mp_glow_remote.u      = (in[1] << 8) | in[2];
     mp_glow_remote.v      = (in[3] << 8) | in[4];
     mp_glow_remote.active = in[0] == 1;
     if (in[0] == 1 || was) mp_glow_remote.since = timer_read();
+}
+
+// Touchpad modes (revision 30): while a Touchpad Mode key is held, finger
+// movement does something else than move the cursor. Actions (0xAA..0xAC):
+enum {
+    MP_TPM_OFF = 0,
+    MP_TPM_SCROLL,      // scroll both ways, like two fingers
+    MP_TPM_SCROLL_V,    // scroll up / down only
+    MP_TPM_ZOOM,        // up / down: Ctrl + wheel
+    MP_TPM_ARROWS,      // arrow keys, one per step
+    MP_TPM_VOLUME,      // up / down: volume
+    MP_TPM_TABS,        // left / right: previous / next tab (Ctrl+Shift+Tab / Ctrl+Tab)
+    MP_TPM_UNDO,        // left / right: undo / redo (Ctrl+Z / Ctrl+Y)
+    MP_TPM_PAGES,       // up / down: Page Up / Page Down
+    MP_TPM_PRECISION,   // slow cursor (the precision mode speed)
+    MP_TPM_SCROLL_H,    // scroll left / right only
+};
+static uint8_t mp_tpm_held   = 0; // bit per mode
+static uint8_t mp_tpm_toggled = 0;
+static void    mp_tpm_key(uint8_t mode, bool pressed) {
+    if (pressed) {
+        mp_tpm_held |= 1 << mode;
+    } else {
+        mp_tpm_held &= ~(1 << mode);
+    }
+}
+static void mp_tpm_toggle(uint8_t mode) {
+    mp_tpm_toggled ^= 1 << mode;
+}
+// The action in use: the lowest held (or toggled) mode with one.
+static uint8_t mp_tpm_action(void) {
+    const uint8_t on = mp_tpm_held | mp_tpm_toggled;
+    for (uint8_t m = 0; m < 3; m++) {
+        if ((on & (1 << m)) && mp_ext.tp_mode[m] != MP_TPM_OFF) return mp_ext.tp_mode[m];
+    }
+    return MP_TPM_OFF;
+}
+
+#    ifndef DIGITIZER_SCROLL_DIVISOR
+#        define DIGITIZER_SCROLL_DIVISOR 10
+#    endif
+
+// Turns the movement (x, y in sensor units, after rotation) into the
+// action; clears what the cursor should not get.
+static void mp_tpm_apply(uint8_t action, int32_t *x, int32_t *y, report_mouse_t *r) {
+    static int32_t acc_x = 0, acc_y = 0, carry_h = 0, carry_v = 0;
+    static uint8_t last  = MP_TPM_OFF;
+    if (action != last) acc_x = acc_y = carry_h = carry_v = 0;
+    last = action;
+    if (action == MP_TPM_OFF) return;
+    if (action == MP_TPM_PRECISION) {
+        *x = *x * mp_ext.precision_scale / 100;
+        *y = *y * mp_ext.precision_scale / 100;
+        return;
+    }
+    if (action == MP_TPM_SCROLL || action == MP_TPM_SCROLL_V || action == MP_TPM_SCROLL_H) {
+        // Same units and direction as two-finger scrolling.
+        const int32_t h = (action == MP_TPM_SCROLL_V ? 0 : *x) + carry_h;
+        const int32_t v = (action == MP_TPM_SCROLL_H ? 0 : *y) + carry_v;
+        carry_h         = h % DIGITIZER_SCROLL_DIVISOR;
+        carry_v         = v % DIGITIZER_SCROLL_DIVISOR;
+        r->h += h / DIGITIZER_SCROLL_DIVISOR;
+        r->v += v / DIGITIZER_SCROLL_DIVISOR;
+        *x = *y = 0;
+        return;
+    }
+    // Stepped actions: one keycode per tp_step mm.
+#    ifdef MATRIX_POINTING_NATIVE_CPI
+    const int32_t step = (int32_t)mp_ext.tp_step * MATRIX_POINTING_NATIVE_CPI / 25;
+#    else
+    const int32_t step = (int32_t)mp_ext.tp_step * mp_config.cpi / 25;
+#    endif
+    acc_x += *x;
+    acc_y += *y;
+    *x = *y = 0;
+    uint16_t left = KC_NO, right = KC_NO, up = KC_NO, down = KC_NO;
+    switch (action) {
+        case MP_TPM_ZOOM:
+            up   = LCTL(MS_WHLU);
+            down = LCTL(MS_WHLD);
+            break;
+        case MP_TPM_ARROWS:
+            left = KC_LEFT, right = KC_RIGHT, up = KC_UP, down = KC_DOWN;
+            break;
+        case MP_TPM_VOLUME:
+            up   = KC_AUDIO_VOL_UP;
+            down = KC_AUDIO_VOL_DOWN;
+            break;
+        case MP_TPM_TABS:
+            left  = LCTL(LSFT(KC_TAB));
+            right = LCTL(KC_TAB);
+            break;
+        case MP_TPM_UNDO:
+            left  = LCTL(KC_Z);
+            right = LCTL(KC_Y);
+            break;
+        case MP_TPM_PAGES:
+            up   = KC_PAGE_UP;
+            down = KC_PAGE_DOWN;
+            break;
+    }
+    if (left == KC_NO) acc_x = 0; // not used: do not let it pile up
+    if (up == KC_NO) acc_y = 0;
+    uint8_t sent = 0; // at most a few per report
+    while (acc_x >= step && sent < 4) acc_x -= step, mp_send_keycode(right), sent++;
+    while (acc_x <= -step && sent < 4) acc_x += step, mp_send_keycode(left), sent++;
+    while (acc_y >= step && sent < 4) acc_y -= step, mp_send_keycode(down), sent++;
+    while (acc_y <= -step && sent < 4) acc_y += step, mp_send_keycode(up), sent++;
 }
 
 // Custom keycodes of the keyboard definition (QK_KB_0..5): DPI+/-,
@@ -1700,6 +1868,16 @@ static bool mp_precision_process(uint16_t keycode, keyrecord_t *record) {
         case QK_KB_4: // Sniping Mode: while held
             mp_precision_hold = pressed;
             mp_config_changed();
+            return false;
+        // Touchpad modes (revision 30): while held (or toggled), the
+        // touchpad does what is set for the mode (0xAA..0xAC).
+        case QK_KB_6: // Touchpad Mode 1 (was "Dragscroll Mode")
+        case QK_KB_8: // Touchpad Mode 2
+        case QK_KB_9: // Touchpad Mode 3
+            mp_tpm_key(keycode == QK_KB_6 ? 0 : keycode == QK_KB_8 ? 1 : 2, pressed);
+            return false;
+        case QK_KB_7: // Touchpad Mode 1 toggle (was "Dragscroll Toggle")
+            if (pressed) mp_tpm_toggle(0);
             return false;
         case QK_KB_5: // Sniping Toggle
             if (pressed) {
@@ -1852,7 +2030,8 @@ static void mp_config_changed(void) {
 // the precision mode scale (100 = off); (revision 19) the touch glow:
 // on, color, radius, fade. Older slaves read only what they know.
 #    define MP_SYNC_SIZE_R17 (sizeof(mp_config_t) + 9)
-#    define MP_SYNC_SIZE (sizeof(mp_config_t) + 13)
+#    define MP_SYNC_SIZE_R19 (sizeof(mp_config_t) + 13)
+#    define MP_SYNC_SIZE (sizeof(mp_config_t) + 15) // + edge bar on, color (revision 30)
 _Static_assert(MP_SYNC_SIZE <= RPC_M2S_BUFFER_SIZE, "Set RPC_M2S_BUFFER_SIZE to at least 64 in config.h");
 
 static void mp_sync_config_slave(uint8_t in_len, const void *in, uint8_t out_len, void *out) {
@@ -1876,10 +2055,15 @@ static void mp_sync_config_slave(uint8_t in_len, const void *in, uint8_t out_len
 #    endif
     }
 #    ifdef MP_EDGES
-    if (in_len >= MP_SYNC_SIZE) {
+    if (in_len >= MP_SYNC_SIZE_R19) {
         const uint8_t *extra = (const uint8_t *)in + sizeof(mp_config_t);
         memcpy(mp_glow_synced, extra + 9, sizeof(mp_glow_synced));
         mp_glow_have_synced = true;
+    }
+    if (in_len >= MP_SYNC_SIZE) {
+        const uint8_t *extra = (const uint8_t *)in + sizeof(mp_config_t);
+        mp_bar_synced[0]     = extra[13];
+        mp_bar_synced[1]     = extra[14];
     }
 #    endif
 #    ifdef POINTING_DEVICE_DRIVER_digitizer
@@ -1984,9 +2168,11 @@ static void mp_split_housekeeping(void) {
         payload[sizeof(mp_config_t) + 10] = mp_ext.touch_glow_color;
         payload[sizeof(mp_config_t) + 11] = mp_ext.touch_glow_radius;
         payload[sizeof(mp_config_t) + 12] = mp_ext.touch_glow_fade;
+        payload[sizeof(mp_config_t) + 13] = mp_ext.edge_bar;
+        payload[sizeof(mp_config_t) + 14] = mp_ext.edge_bar_color;
 #    else
         payload[sizeof(mp_config_t) + 8] = 100;
-        memset(payload + sizeof(mp_config_t) + 9, 0, 4);
+        memset(payload + sizeof(mp_config_t) + 9, 0, 6);
 #    endif
         if (transaction_rpc_send(MP_SYNC_CONFIG, sizeof(payload), payload)) {
             mp_synced_generation = mp_generation;
@@ -2679,6 +2865,58 @@ static const uint8_t mp_led_hs[][2] = {
 };
 
 #ifdef MP_EDGES
+// Edge slider bar (revision 30): while an edge slider is in use, the LEDs
+// show the finger's place along it as a level, filling from the left (top
+// and bottom edges) or from the bottom (side edges) up to it, brightest at
+// the front. Returns true when it drew.
+static bool mp_bar_render(const mp_glow_t *g, uint8_t led_min, uint8_t led_max) {
+#    ifdef SPLIT_KEYBOARD
+    const bool synced = !is_keyboard_master();
+#    else
+    const bool synced = false;
+#    endif
+    const uint8_t on    = synced ? mp_bar_synced[0] : mp_ext.edge_bar;
+    const uint8_t color = synced ? mp_bar_synced[1] : mp_ext.edge_bar_color;
+    if (!on || !g->bar) return false;
+    const uint16_t since = timer_elapsed(g->bar_time);
+    if (since >= MP_BAR_HOLD_MS) return false;
+    // Fade out over the last third.
+    const int32_t fade = since < MP_BAR_HOLD_MS * 2 / 3 ? 256 : (int32_t)(MP_BAR_HOLD_MS - since) * 256 * 3 / MP_BAR_HOLD_MS;
+    int16_t x0 = INT16_MAX, x1 = INT16_MIN, y0 = INT16_MAX, y1 = INT16_MIN;
+    for (uint8_t i = 0; i < RGB_MATRIX_LED_COUNT; i++) {
+        const led_point_t pt = g_led_config.point[i];
+        if (pt.x < x0) x0 = pt.x;
+        if (pt.x > x1) x1 = pt.x;
+        if (pt.y < y0) y0 = pt.y;
+        if (pt.y > y1) y1 = pt.y;
+    }
+    const bool    side  = g->bar - 1 < 2;
+    const int32_t span  = side ? (y1 - y0) : (x1 - x0);
+    const int32_t front = (int32_t)g->bar_pos * span / MP_EDGE_SCALE; // from the start
+    uint8_t       hue = rgb_matrix_get_hue(), sat = rgb_matrix_get_sat();
+    if (color >= 2 && color - 2 < (int)ARRAY_SIZE(mp_led_hs)) {
+        hue = mp_led_hs[color - 2][0];
+        sat = mp_led_hs[color - 2][1];
+    }
+    const uint8_t val = rgb_matrix_get_val();
+    for (uint8_t i = led_min; i < led_max; i++) {
+        const led_point_t pt = g_led_config.point[i];
+        const int32_t     at = side ? (y1 - pt.y) : (pt.x - x0); // distance from the start
+        int32_t           level;
+        if (at > front + 12) {
+            level = 0; // beyond the finger: off
+        } else if (at > front - 20) {
+            level = 256; // the front
+        } else {
+            level = 70; // the filled part, dimmer
+        }
+        const hsv_t hsv = {hue, sat, (uint8_t)((int32_t)val * level / 256 * fade / 256)};
+        const rgb_t rgb = hsv_to_rgb(hsv);
+        rgb_matrix_set_color(i, rgb.r, rgb.g, rgb.b);
+    }
+    return true;
+}
+
 // Touch glow (revision 18): the pad is mapped onto the keyboard's whole LED
 // area and the keys around the finger's place light up, brighter closer to
 // it, fading out after the finger lifts.
@@ -2693,12 +2931,13 @@ static void mp_glow_render(uint8_t led_min, uint8_t led_max) {
     const uint8_t color   = synced ? mp_glow_synced[1] : mp_ext.touch_glow_color;
     uint8_t       radius  = synced ? mp_glow_synced[2] : mp_ext.touch_glow_radius;
     const uint8_t fade_cs = synced ? mp_glow_synced[3] : mp_ext.touch_glow_fade;
-    if (!on) return;
     if (radius < 10) radius = 10;
     if (radius > 60) radius = 60;
     const uint16_t fade_ms = (uint16_t)(fade_cs > 200 ? 200 : fade_cs) * 10;
     const mp_glow_t *g    = mp_glow_now();
-    int32_t          fade = 256;
+    if (mp_bar_render(g, led_min, led_max)) return;
+    if (!on) return;
+    int32_t fade = 256;
     if (!g->active) {
         if (g->since == 0) return; // never touched
         const uint16_t since = timer_elapsed(g->since);
@@ -3334,6 +3573,9 @@ report_mouse_t matrix_pointing_task(report_mouse_t r) {
     }
     if (mp_config.invert_x) x = -x;
     if (mp_config.invert_y) y = -y;
+#ifdef MP_EDGES
+    mp_tpm_apply(mp_tpm_action(), &x, &y, &r);
+#endif
 
 #ifdef MP_SMOOTH
     return mp_smooth(r, x, y);

@@ -38,14 +38,24 @@
       "shortName": "SnipeTG"
     },
     {
-      "name": "Dragscroll Mode",
-      "title": "ドラッグスクロール（このファームウェアでは未対応）",
-      "shortName": "DragScl"
+      "name": "Touchpad Mode 1",
+      "title": "押している間、タッチパッドを「モード 1」の動作にする（Touchpad 設定で選ぶ）",
+      "shortName": "TP1"
     },
     {
-      "name": "Dragscroll Toggle",
-      "title": "ドラッグスクロール切り替え（このファームウェアでは未対応）",
-      "shortName": "DragTog"
+      "name": "Touchpad Mode 1 Toggle",
+      "title": "タッチパッドの「モード 1」をオン／オフ",
+      "shortName": "TP1 TG"
+    },
+    {
+      "name": "Touchpad Mode 2",
+      "title": "押している間、タッチパッドを「モード 2」の動作にする（Touchpad 設定で選ぶ）",
+      "shortName": "TP2"
+    },
+    {
+      "name": "Touchpad Mode 3",
+      "title": "押している間、タッチパッドを「モード 3」の動作にする（Touchpad 設定で選ぶ）",
+      "shortName": "TP3"
     }
   ],
   "keycodes": ["qmk_lighting"],
