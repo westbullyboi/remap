@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 28
+#define MP_REVISION 29
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -1826,6 +1826,13 @@ static bool mp_knob_process(uint16_t keycode, keyrecord_t *record) {
 //   #define SPLIT_TRANSACTION_IDS_USER MP_SYNC_CONFIG, MP_SYNC_SWIPE
 //   #define RPC_M2S_BUFFER_SIZE 64
 
+// Touchpad movement from the other half (see mp_drain()), carried by the
+// split poll (revision 29).
+static void mp_motion_pack(uint8_t *o);
+static void mp_motion_unpack(const uint8_t *m, uint16_t transit_ms);
+static void mp_motion_reset(void);
+static bool mp_motion_active(void);
+
 #if defined(SPLIT_KEYBOARD) && defined(MATRIX_POINTING_SPLIT_SYNC)
 #    include "transactions.h"
 #    include "split_util.h"
@@ -1890,6 +1897,7 @@ static void mp_sync_config_slave(uint8_t in_len, const void *in, uint8_t out_len
 #    define MP_PEER_MARKER 0xA5
 #    define MP_PEER_REPLY_BASE 12 // up to the finger count (revisions 12-17)
 #    define MP_PEER_REPLY_SIZE 17 // + touch glow [active, u, v] (revision 18)
+#    define MP_PEER_REPLY_MOTION (MP_PEER_REPLY_SIZE + 12) // + touchpad movement (revision 29)
 // Request (revision 18): the master's touch glow [active, u, v] when the
 // touchpad is on the master half.
 static void mp_sync_swipe_slave(uint8_t in_len, const void *in, uint8_t out_len, void *out) {
@@ -1938,6 +1946,7 @@ static void mp_sync_swipe_slave(uint8_t in_len, const void *in, uint8_t out_len,
         memset(o + 12, 0, 5);
 #    endif
     }
+    if (out_len >= MP_PEER_REPLY_MOTION) mp_motion_pack(o + MP_PEER_REPLY_SIZE);
 }
 
 static uint8_t  mp_peer_state    = 0; // see MP_SPLIT_INFO_VALUE_ID
@@ -1983,25 +1992,49 @@ static void mp_split_housekeeping(void) {
             mp_synced_generation = mp_generation;
         }
     }
+    // The split link is slow (Corne Procyon36: 38400 baud), so the poll is
+    // kept small (revision 29): the key guide goes only when it changed
+    // (or once a second), and while the touchpad on the other half is in
+    // use the poll runs back to back and carries its movement (before, a
+    // separate fetch every 4 ms plus the key guide every 20 ms filled the
+    // link and delayed the cursor).
     static uint16_t last_poll = 0;
-    if (timer_elapsed(last_poll) >= 20) {
-        last_poll         = timer_read();
-        uint8_t reply[MP_PEER_REPLY_SIZE] = {0};
+    if (mp_motion_active() || timer_elapsed(last_poll) >= 20) {
+        last_poll = timer_read();
+        _Static_assert(MP_PEER_REPLY_MOTION <= RPC_S2M_BUFFER_SIZE, "Set RPC_S2M_BUFFER_SIZE to at least 29");
+        uint8_t reply[MP_PEER_REPLY_MOTION] = {0};
         // This half's touch glow (5 bytes), then (revision 20) the key guide.
 #    ifdef MP_GUIDE
         _Static_assert(5 + MP_GUIDE_PACKET <= RPC_M2S_BUFFER_SIZE, "key guide does not fit the split request");
-        uint8_t glow[5 + MP_GUIDE_PACKET] = {0};
+        uint8_t                  glow[5 + MP_GUIDE_PACKET] = {0};
+        static uint8_t           guide_sent[MP_GUIDE_PACKET];
+        static uint16_t          guide_time = 0;
+        static bool              guide_have = false;
         mp_guide_compute();
-        memcpy(glow + 5, mp_guide_packet, MP_GUIDE_PACKET);
+        uint8_t glow_len = 5;
+        if (!guide_have || timer_elapsed(guide_time) > 1000 || memcmp(guide_sent, mp_guide_packet, MP_GUIDE_PACKET) != 0) {
+            memcpy(glow + 5, mp_guide_packet, MP_GUIDE_PACKET);
+            glow_len = sizeof(glow);
+        }
 #    else
-        uint8_t glow[5] = {0};
+        uint8_t glow[5]  = {0};
+        uint8_t glow_len = 5;
 #    endif
 #    ifdef MP_EDGES
         if (mp_edge_on_this_side()) mp_glow_pack(&mp_glow_local, glow);
 #    endif
+        const uint16_t started = timer_read();
         if (!is_transport_connected()) {
             mp_peer_state = 3;
-        } else if (transaction_rpc_exec(MP_SYNC_SWIPE, sizeof(glow), glow, sizeof(reply), reply)) {
+            mp_motion_reset();
+        } else if (transaction_rpc_exec(MP_SYNC_SWIPE, glow_len, glow, sizeof(reply), reply)) {
+#    ifdef MP_GUIDE
+            if (glow_len > 5) {
+                memcpy(guide_sent, mp_guide_packet, MP_GUIDE_PACKET);
+                guide_time = timer_read();
+                guide_have = true;
+            }
+#    endif
             if (reply[0]) mp_send_swipe(reply[0] - 1);
             if (reply[1] == MP_PEER_MARKER) {
                 mp_peer_state    = 1;
@@ -2020,6 +2053,8 @@ static void mp_split_housekeeping(void) {
                 if (reply[11]) mp_fingers_remote = reply[11] - 1;
                 if (!mp_edge_on_this_side()) mp_glow_unpack(reply + 12);
 #    endif
+                // The reply took about half of the exchange to arrive.
+                if (mp_peer_build == mp_build_id()) mp_motion_unpack(reply + MP_PEER_REPLY_SIZE, timer_elapsed(started) / 2);
             } else {
                 mp_peer_state = 2;
             }
@@ -2410,40 +2445,41 @@ static bool mp_pointing_on_this_side(void) {
 // the fallback's latest report, which the next pass already set to zero, so
 // nearly all movement was lost and the touchpad seemed dead. The touchpad
 // half collects the movement of every pass here (QMK's report then carries
-// only the buttons) and the master fetches it every few milliseconds
-// (MP_SYNC_MOTION).
+// only the buttons) and the master gets it with the split poll (revision
+// 29; revisions 25-28 used a separate fetch).
 //   config.h: #define MATRIX_POINTING_SPLIT_MOTION
-//             add MP_SYNC_MOTION to SPLIT_TRANSACTION_IDS_USER
+//             #define RPC_S2M_BUFFER_SIZE 32 (QMK's default)
 #        define MP_REMOTE_MOTION
-#        define MP_MOTION_POLL_MS 4
 // The touchpad half only adds to running totals (index 4 counts the sensor
-// frames, passes that had movement) and the reply carries the totals
-// themselves: the USB half takes the difference to the totals it saw
-// last, so a fetch that fails on the way loses nothing, it just comes
-// with the next one (revision 27; before, a lost reply lost its movement,
-// which made the cursor slower). The frames' spacing goes along
-// (revision 26) so the smoothing and acceleration see the real timing.
-static volatile uint32_t mp_motion_acc[5]    = {0}; // x, y, h, v, frames (wrapping)
+// frames, passes that had movement); the split poll carries the low bits
+// of the totals and the USB half applies the difference to the totals it
+// saw last, so a poll that fails loses nothing (revision 27). The frames'
+// spacing goes along (revision 26), and how long ago the last one was read
+// (revision 29), so the smoothing and acceleration see the real timing and
+// do not add the poll's delay on top.
+static volatile uint32_t mp_motion_acc[5]    = {0}; // x, y, h, v, frames
 static volatile uint16_t mp_motion_frame_x16 = 8 * 16; // frame spacing, ms x16
+static volatile uint16_t mp_motion_frame_at  = 0;      // when the last frame was read
 
-static void mp_motion_slave(uint8_t in_len, const void *in, uint8_t out_len, void *out) {
-    uint8_t *o = (uint8_t *)out;
-    if (out_len < 23) return;
-    o[0] = 0xD2; // marker (totals)
-    for (uint8_t k = 0; k < 5; k++) {
-        const uint32_t v = mp_motion_acc[k];
-        memcpy(o + 1 + k * 4, &v, 4);
+static void mp_motion_register(void) {}
+
+// 12 bytes: marker, x, y, h, v (low 16 bits of the totals), frames (low 8
+// bits), spacing (ms x4), ms since the last frame.
+static void mp_motion_pack(uint8_t *o) {
+    o[0] = 0xD3;
+    for (uint8_t k = 0; k < 4; k++) {
+        const uint16_t v = (uint16_t)mp_motion_acc[k];
+        memcpy(o + 1 + k * 2, &v, 2);
     }
-    const uint16_t spacing = mp_motion_frame_x16;
-    memcpy(o + 21, &spacing, 2);
+    o[9]                  = (uint8_t)mp_motion_acc[4];
+    const uint16_t spacing = mp_motion_frame_x16 / 4;
+    o[10]                 = spacing > 255 ? 255 : (uint8_t)spacing;
+    const uint16_t age     = timer_elapsed(mp_motion_frame_at);
+    o[11]                 = age > 255 ? 255 : (uint8_t)age;
 }
 
-static void mp_motion_register(void) {
-    transaction_register_rpc(MP_SYNC_MOTION, mp_motion_slave);
-}
-
-// Diagnostics (value 0xA9, revision 28): over the last second, fetches
-// that worked / failed and the sensor frames that came with them.
+// Diagnostics (value 0xA9, revision 28): over the last second, polls that
+// carried the movement / failed, and the sensor frames that came with them.
 static uint16_t mp_motion_stat[3]      = {0}; // this second: ok, failed, frames
 static uint16_t mp_motion_last_stat[3] = {0}; // the second before
 static void     mp_motion_stat_tick(void) {
@@ -2454,8 +2490,9 @@ static void     mp_motion_stat_tick(void) {
     memset(mp_motion_stat, 0, sizeof(mp_motion_stat));
 }
 
-// [fetches ok, failed (1 byte each, up to 255), sensor frames (2 bytes)].
+// [polls ok, failed (1 byte each, up to 255), sensor frames (2 bytes)].
 bool matrix_pointing_motion_stats(uint8_t *data) {
+    mp_motion_stat_tick();
     data[0] = mp_motion_last_stat[0] > 255 ? 255 : mp_motion_last_stat[0];
     data[1] = mp_motion_last_stat[1] > 255 ? 255 : mp_motion_last_stat[1];
     data[2] = mp_motion_last_stat[2] >> 8;
@@ -2463,51 +2500,62 @@ bool matrix_pointing_motion_stats(uint8_t *data) {
     return true;
 }
 
-static void mp_motion_master(void) {
-    static uint16_t last = 0;
-    if (timer_elapsed(last) < MP_MOTION_POLL_MS) return;
-    last = timer_read();
-    // Only with the same build on the other half (see the EEPROM mirror).
-    static uint32_t seen[5];
-    static bool    have_seen = false;
-    if (!is_transport_connected() || mp_peer_state != 1 || mp_peer_build != mp_build_id()) {
-        have_seen = false;
+static uint16_t mp_seen[4];
+static uint8_t  mp_seen_frames  = 0;
+static bool     mp_seen_have    = false;
+static uint16_t mp_motion_time  = 0; // last movement from the other half
+static uint8_t  mp_remote_delay = 0; // ms the last batch is old on arrival
+
+static void mp_motion_reset(void) {
+    mp_seen_have = false;
+}
+
+static bool mp_motion_active(void) {
+    if (mp_pointing_on_this_side()) return false;
+    return (mp_fingers_remote > 0 && mp_fingers_remote != 0xFF) || timer_elapsed(mp_motion_time) < 300;
+}
+
+static void mp_motion_unpack(const uint8_t *m, uint16_t transit_ms) {
+    if (m[0] != 0xD3) return; // the other half has no touchpad movement
+    uint16_t total[4];
+    memcpy(total, m + 1, sizeof(total));
+    int32_t d[4];
+    for (uint8_t k = 0; k < 4; k++) d[k] = (int16_t)(uint16_t)(total[k] - mp_seen[k]);
+    const uint8_t frames = (uint8_t)(m[9] - mp_seen_frames);
+    memcpy(mp_seen, total, sizeof(mp_seen));
+    mp_seen_frames = m[9];
+    // First poll, or the other half restarted: start from here.
+    if (!mp_seen_have || frames > 60) {
+        mp_seen_have = true;
         return;
     }
-    const uint8_t req[1]    = {0};
-    uint8_t       reply[23] = {0};
     mp_motion_stat_tick();
-    if (!transaction_rpc_exec(MP_SYNC_MOTION, sizeof(req), req, sizeof(reply), reply) || reply[0] != 0xD2) {
-        mp_motion_stat[1]++;
-        return;
-    }
     mp_motion_stat[0]++;
-    uint32_t total[5];
-    memcpy(total, reply + 1, sizeof(total));
-    int32_t d[5];
-    for (uint8_t k = 0; k < 5; k++) d[k] = (int32_t)(total[k] - seen[k]); // wraps like the totals
-    memcpy(seen, total, sizeof(seen));
-    // First fetch, or the other half restarted (its totals went back):
-    // start from here.
-    if (!have_seen || d[4] < 0 || d[4] > 1000) {
-        have_seen = true;
-        return;
-    }
+    mp_motion_stat[2] += frames;
+    if (!frames) return;
     mp_drain_x += d[0];
     mp_drain_y += d[1];
     mp_drain_h += d[2];
     mp_drain_v += d[3];
-    mp_motion_stat[2] += d[4];
-    uint16_t spacing;
-    memcpy(&spacing, reply + 21, sizeof(spacing));
-    if (d[4]) {
-        const int32_t frames = mp_remote_frames + d[4];
-        mp_remote_frames     = frames > 255 ? 255 : (uint8_t)frames;
-        if (spacing >= 16 && spacing <= 40 * 16) mp_remote_frame_x16 = spacing;
-    }
+    mp_motion_time         = timer_read();
+    const uint16_t frames2 = mp_remote_frames + frames;
+    mp_remote_frames       = frames2 > 255 ? 255 : (uint8_t)frames2;
+    const uint16_t spacing = (uint16_t)m[10] * 4;
+    if (spacing >= 16 && spacing <= 40 * 16) mp_remote_frame_x16 = spacing;
+    const uint16_t delay = m[11] + transit_ms;
+    mp_remote_delay      = delay > 255 ? 255 : (uint8_t)delay;
 }
 #    else
-static void mp_motion_register(void) {}
+static uint8_t mp_remote_delay = 0;
+static void    mp_motion_register(void) {}
+static void    mp_motion_pack(uint8_t *o) {
+    memset(o, 0, 12);
+}
+static void mp_motion_unpack(const uint8_t *m, uint16_t transit_ms) {}
+static void mp_motion_reset(void) {}
+static bool mp_motion_active(void) {
+    return false;
+}
 #    endif
 
 static void mp_drain(void) {
@@ -2531,13 +2579,11 @@ static void mp_drain(void) {
             mp_motion_acc[2] += (uint32_t)(int32_t)r.h;
             mp_motion_acc[3] += (uint32_t)(int32_t)r.v;
             mp_motion_acc[4] += 1;
+            mp_motion_frame_at = timer_read();
         }
         return;
     }
-    if (!mp_pointing_on_this_side()) {
-        mp_motion_master();
-        return;
-    }
+    if (!mp_pointing_on_this_side()) return; // carried by the split poll
 #    endif
     // Only on the USB half with the sensor; the other half's report goes
     // through the split transport instead.
@@ -2553,6 +2599,7 @@ static void mp_drain(void) {
 // sensor), for the smoothing.
 static uint8_t  mp_batch_frames    = 0;
 static uint16_t mp_batch_frame_x16 = 8 * 16;
+static uint8_t  mp_batch_delay     = 0; // ms the batch was old on arrival
 
 // The movement (sensor units) with what was collected added, unclamped:
 // the report's x / y hold only -127..127, and movement fetched from the
@@ -2581,6 +2628,7 @@ static report_mouse_t mp_add_drained(report_mouse_t r) {
 #else
 static uint8_t                               mp_batch_frames    = 0;
 static uint16_t                              mp_batch_frame_x16 = 8 * 16;
+static uint8_t                               mp_batch_delay     = 0;
 static void                                  mp_drain(void) {}
 static void                                  mp_motion_register(void) {}
 static int32_t                               mp_drained_x = 0, mp_drained_y = 0;
@@ -3155,8 +3203,11 @@ static report_mouse_t mp_smooth(report_mouse_t r, int32_t x, int32_t y) {
         const int64_t scale = (int64_t)mp_config.cpi * gain;
         pend_x += (int32_t)(x * scale / MATRIX_POINTING_NATIVE_CPI);
         pend_y += (int32_t)(y * scale / MATRIX_POINTING_NATIVE_CPI);
-        // A batch of frames is spread over the time it took.
-        pend_until = now + (smooth ? (uint16_t)(frame_x16 * (batch ? batch : 1) / 16) : 0);
+        // A batch of frames is spread over the time it took, less how old
+        // it already was when it arrived (revision 29).
+        int32_t spread = smooth ? frame_x16 * (batch ? batch : 1) / 16 : 0;
+        if (batch) spread -= mp_batch_delay;
+        pend_until = now + (uint16_t)(spread > 0 ? spread : 0);
     }
     int32_t ex = mp_spread(pend_x, pend_until, now, elapsed);
     int32_t ey = mp_spread(pend_y, pend_until, now, elapsed);
