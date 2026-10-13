@@ -965,5 +965,13 @@
   "Layer stack": "レイヤー積層",
   "Show all layers stacked (wheel: spacing)": "全レイヤーを積み重ねて表示（ホイールで間隔を調整）",
   "Drag a knob on the 3D keyboard sideways to try it. Hold Shift to push and turn.": "3D キーボード上のノブを左右にドラッグすると動作を試せます。Shift を押しながらドラッグすると「押しながら回す」になります。",
-  "You can also click a zone on the 3D touchpad.": "3D キーボードのタッチパッド上の領域をクリックしても選べます。"
+  "You can also click a zone on the 3D touchpad.": "3D キーボードのタッチパッド上の領域をクリックしても選べます。",
+  "Set what turning a knob does, and push and turn it for a second set of actions.": "ノブを回したときの動作と、押しながら回したときの別の動作を設定します。",
+  "Not written yet": "未書き込み",
+  "Layer {{layer}}": "レイヤー {{layer}}",
+  "Turn": "回す",
+  "Without pushing. Written with \"Write to keyboard\"; each layer has its own (switch the layer at the top). For any other key, click the knob on the 3D keyboard.": "押さずに回したとき。「キーボードに反映」で書き込まれます。レイヤーごとに設定できます（上部でレイヤーを切り替え）。一覧にないキーは 3D キーボードのノブをクリックして選んでください。",
+  "Saved in the keyboard at once, on every layer.": "変更するとすぐキーボードに保存されます（全レイヤー共通）。",
+  "Needs newer firmware": "新しいファームウェアが必要です",
+  "Knob": "ノブ"
 }

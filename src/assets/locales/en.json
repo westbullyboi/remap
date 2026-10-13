@@ -872,5 +872,13 @@
   "Layer stack": "Layer stack",
   "Show all layers stacked (wheel: spacing)": "Show all layers stacked (wheel: spacing)",
   "Drag a knob on the 3D keyboard sideways to try it. Hold Shift to push and turn.": "Drag a knob on the 3D keyboard sideways to try it. Hold Shift to push and turn.",
-  "You can also click a zone on the 3D touchpad.": "You can also click a zone on the 3D touchpad."
+  "You can also click a zone on the 3D touchpad.": "You can also click a zone on the 3D touchpad.",
+  "Set what turning a knob does, and push and turn it for a second set of actions.": "Set what turning a knob does, and push and turn it for a second set of actions.",
+  "Not written yet": "Not written yet",
+  "Layer {{layer}}": "Layer {{layer}}",
+  "Turn": "Turn",
+  "Without pushing. Written with \"Write to keyboard\"; each layer has its own (switch the layer at the top). For any other key, click the knob on the 3D keyboard.": "Without pushing. Written with \"Write to keyboard\"; each layer has its own (switch the layer at the top). For any other key, click the knob on the 3D keyboard.",
+  "Saved in the keyboard at once, on every layer.": "Saved in the keyboard at once, on every layer.",
+  "Needs newer firmware": "Needs newer firmware",
+  "Knob": "Knob"
 }
