@@ -220,6 +220,10 @@ const KEYCODE_NAMES: { [code: number]: string } = {
   0x0051: 'Down',
   0x0050: 'Left',
   0x004f: 'Right',
+  0x0950: 'Previous desktop',
+  0x094f: 'Next desktop',
+  0x0150: 'Previous desktop',
+  0x014f: 'Next desktop',
   0x004b: 'Page up',
   0x004e: 'Page down',
 };

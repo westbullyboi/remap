@@ -131,14 +131,20 @@ export function KnobExtraRows(props: {
       aria-label={`${name} ${pushed ? t('Push and turn') : t('Turn')}`}
       onChange={(ev) => setMode(pushed, Number(ev.target.value))}
     >
-      {KNOB_MODES.filter(
-        (m) =>
-          (m.revision ?? 0) <= x.revision || m.value === e.modes[knob][pushed]
-      ).map((m) => (
-        <option key={m.value} value={m.value}>
-          {t(m.label)}
-        </option>
-      ))}
+      {KNOB_MODES.map((m) => {
+        // Older firmware would take a newer mode as the last one it knows.
+        const tooOld =
+          (m.revision ?? 0) > x.revision && m.value !== e.modes[knob][pushed];
+        return (
+          <option key={m.value} value={m.value} disabled={tooOld}>
+            {t(m.label)}
+            {tooOld &&
+              ` — ${t('needs firmware r{{revision}}', {
+                revision: m.revision,
+              })}`}
+          </option>
+        );
+      })}
     </select>
   );
   const keyButton = (which: 'hold' | 'double') => {

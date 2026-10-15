@@ -1081,5 +1081,8 @@
   "Gesture off": "Gesture off",
   "Switch virtual desktops (Ctrl + Win + ← / →, Ctrl + ← / → on a Mac)": "Switch virtual desktops (Ctrl + Win + ← / →, Ctrl + ← / → on a Mac)",
   "switch virtual desktops": "switch virtual desktops",
-  "Knob set to switch virtual desktops: turning moves to the next / previous desktop": "Knob set to switch virtual desktops: turning moves to the next / previous desktop"
+  "Knob set to switch virtual desktops: turning moves to the next / previous desktop": "Knob set to switch virtual desktops: turning moves to the next / previous desktop",
+  "Virtual desktops (Ctrl+Win+← / →)": "Virtual desktops (Ctrl+Win+← / →)",
+  "Virtual desktops, Mac (Ctrl+← / →)": "Virtual desktops, Mac (Ctrl+← / →)",
+  "needs firmware r{{revision}}": "needs firmware r{{revision}}"
 }

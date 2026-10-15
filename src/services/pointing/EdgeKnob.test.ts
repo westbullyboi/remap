@@ -46,4 +46,15 @@ describe('EdgeKnob presets', () => {
     );
     expect(matchPair([0x0004, 0x0005], 'other').kind).toBe('custom');
   });
+
+  test('virtual desktop presets', () => {
+    expect(presetKeycodes(preset('desktops'), 'other', false)).toEqual([
+      0x0950, 0x094f,
+    ]);
+    expect(matchPair([0x014f, 0x0150], 'other')).toEqual({
+      kind: 'preset',
+      preset: preset('desktopsMac'),
+      reversed: true,
+    });
+  });
 });

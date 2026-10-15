@@ -98,6 +98,20 @@ export const PAIR_PRESETS: PairPreset[] = [
     kind: 'motion',
     pair: [CTL | SFT | 0x002b, CTL | 0x002b],
   },
+  // Virtual desktops: Windows' Ctrl + Win + arrows, macOS' Mission Control
+  // "Move left / right a space" (Ctrl + arrows).
+  {
+    id: 'desktops',
+    label: 'Virtual desktops (Ctrl+Win+← / →)',
+    kind: 'motion',
+    pair: [CTL | GUI | 0x0050, CTL | GUI | 0x004f],
+  },
+  {
+    id: 'desktopsMac',
+    label: 'Virtual desktops, Mac (Ctrl+← / →)',
+    kind: 'motion',
+    pair: [CTL | 0x0050, CTL | 0x004f],
+  },
   {
     id: 'undo',
     label: 'Undo / redo (Ctrl+Z / Ctrl+Y)',
