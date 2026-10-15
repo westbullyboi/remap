@@ -1171,5 +1171,8 @@
   "How far to turn for one key (smaller = more steps).": "キーを1回送るのに必要な回転角です（小さいほど細かく反応します）。",
   "On, a key every {{step}} degrees": "オン、{{step}}° ごとにキーを送信",
   "Turn two fingers on the touchpad: the volume (or the set key) changes; scrolling with two fingers still scrolls": "タッチパッドで2本指をひねる：音量（または設定したキー）が変わる。2本指スクロールは従来どおり動く",
-  "Gesture off": "オフ"
+  "Gesture off": "オフ",
+  "Switch virtual desktops (Ctrl + Win + ← / →, Ctrl + ← / → on a Mac)": "仮想デスクトップ切替（Ctrl + Win + ← / →、Mac は Ctrl + ← / →）",
+  "switch virtual desktops": "仮想デスクトップ切替",
+  "Knob set to switch virtual desktops: turning moves to the next / previous desktop": "「仮想デスクトップ切替」にしたノブを回す：次／前のデスクトップに切り替わる"
 }

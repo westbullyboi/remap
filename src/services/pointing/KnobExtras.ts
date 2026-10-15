@@ -18,10 +18,21 @@ export const KNOB_SWITCH_MS_ID = 0xca;
 export const KNOB_REVISION = 32;
 
 // What turning does (MP_KNOB_*).
-export const KNOB_MODES: { value: number; label: string }[] = [
+export const KNOB_MODES: {
+  value: number;
+  label: string;
+  // Firmware revision it needs (32 when not set).
+  revision?: number;
+}[] = [
   { value: 0, label: 'Send the keys' },
   { value: 1, label: 'Switch windows (Alt + Tab / Cmd + Tab)' },
   { value: 2, label: 'Select the layer' },
+  {
+    value: 3,
+    label:
+      'Switch virtual desktops (Ctrl + Win + ← / →, Ctrl + ← / → on a Mac)',
+    revision: 34,
+  },
 ];
 
 export const KNOB_ACCELS: { value: number; label: string }[] = [

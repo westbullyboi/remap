@@ -1078,5 +1078,8 @@
   "How far to turn for one key (smaller = more steps).": "How far to turn for one key (smaller = more steps).",
   "On, a key every {{step}} degrees": "On, a key every {{step}} degrees",
   "Turn two fingers on the touchpad: the volume (or the set key) changes; scrolling with two fingers still scrolls": "Turn two fingers on the touchpad: the volume (or the set key) changes; scrolling with two fingers still scrolls",
-  "Gesture off": "Gesture off"
+  "Gesture off": "Gesture off",
+  "Switch virtual desktops (Ctrl + Win + ← / →, Ctrl + ← / → on a Mac)": "Switch virtual desktops (Ctrl + Win + ← / →, Ctrl + ← / → on a Mac)",
+  "switch virtual desktops": "switch virtual desktops",
+  "Knob set to switch virtual desktops: turning moves to the next / previous desktop": "Knob set to switch virtual desktops: turning moves to the next / previous desktop"
 }

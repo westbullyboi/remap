@@ -1,4 +1,4 @@
-From b0ffd9db577c68cdb07311373b5e3e0cd8a77ddd Mon Sep 17 00:00:00 2001
+From c34b349decf15f90c2dbd5634cc536a268421f3c Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 14:40:51 +0000
 Subject: [PATCH] Add Matrix editor support and fix the build on the multitouch
@@ -46,10 +46,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  keyboards/corne_procyon36/digitizer_user.c    |   99 +-
  keyboards/corne_procyon36/keyboard.json       |    2 +-
  .../corne_procyon36/keymaps/default/keymap.c  |   26 +-
- keyboards/corne_procyon36/matrix_pointing.c   | 4283 +++++++++++++++++
+ keyboards/corne_procyon36/matrix_pointing.c   | 4292 +++++++++++++++++
  keyboards/corne_procyon36/matrix_pointing.h   |   94 +
  keyboards/corne_procyon36/rules.mk            |   12 +-
- 7 files changed, 4512 insertions(+), 100 deletions(-)
+ 7 files changed, 4521 insertions(+), 100 deletions(-)
  create mode 100644 keyboards/corne_procyon36/matrix_pointing.c
  create mode 100644 keyboards/corne_procyon36/matrix_pointing.h
 
@@ -371,10 +371,10 @@ index 2784405..a661c11 100644
  }
 diff --git a/keyboards/corne_procyon36/matrix_pointing.c b/keyboards/corne_procyon36/matrix_pointing.c
 new file mode 100644
-index 0000000..a34b89c
+index 0000000..e6f8490
 --- /dev/null
 +++ b/keyboards/corne_procyon36/matrix_pointing.c
-@@ -0,0 +1,4283 @@
+@@ -0,0 +1,4292 @@
 +// Matrix pointing settings for QMK (touchpad + auto mouse layer).
 +// See matrix_pointing.h and README.md next to this file.
 +//
@@ -433,7 +433,7 @@ index 0000000..a34b89c
 +// Read-only value 0x7C: revision of this module, so the editor can tell that
 +// the keyboard runs an older build. Bump it with every behaviour change.
 +#define MP_REVISION_VALUE_ID 0x7C
-+#define MP_REVISION 33
++#define MP_REVISION 34
 +// Read-only value 0x7D: the other half of a split keyboard —
 +// [state, its revision (2), this build's ID (2), its build ID (2)];
 +// state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -1053,7 +1053,9 @@ index 0000000..a34b89c
 +// ---------------------------------------------------------------------------
 +// Knob settings (revision 32), kept in the key block below:
 +//   mode[k][0]  turning: 0 the keymap's keycodes, 1 switch windows
-+//               (Alt + Tab, Cmd + Tab on a Mac), 2 select the layer
++//               (Alt + Tab, Cmd + Tab on a Mac), 2 select the layer,
++//               3 (revision 34) switch virtual desktops (Ctrl + Win +
++//               left / right, Ctrl + left / right on a Mac)
 +//   mode[k][1]  the same while the push switch is held (0 = knob_kc /
 +//               the keymap, as before)
 +//   accel[k]    turning fast sends more steps: 0 off, 1-3 stronger
@@ -1062,7 +1064,7 @@ index 0000000..a34b89c
 +//   bar         show the knob's level (or the selected layer) on the LEDs
 +//   layers      layers the layer selection goes through (0 .. layers - 1)
 +//   switch_ms   window switching ends this long after the last step
-+enum { MP_KNOB_KEYS = 0, MP_KNOB_WINDOWS, MP_KNOB_LAYERS };
++enum { MP_KNOB_KEYS = 0, MP_KNOB_WINDOWS, MP_KNOB_LAYERS, MP_KNOB_DESKTOPS };
 +typedef struct __attribute__((packed)) {
 +    uint8_t  mode[2][2];
 +    uint8_t  accel[2];
@@ -1195,7 +1197,7 @@ index 0000000..a34b89c
 +    *lo              = 0;
 +    *hi              = 0xFF;
 +    if (id >= 0xBC && id <= 0xBF) {
-+        *hi = 2;
++        *hi = MP_KNOB_DESKTOPS;
 +        return &c->mode[(id - 0xBC) / 2][(id - 0xBC) % 2];
 +    }
 +    if (id == 0xC0 || id == 0xC1) {
@@ -2833,6 +2835,13 @@ index 0000000..a34b89c
 +        }
 +        if (mode == MP_KNOB_LAYERS) {
 +            mp_layer_step(knob, dir);
++            return false;
++        }
++        if (mode == MP_KNOB_DESKTOPS) {
++            // Windows: Ctrl + Win + left / right; macOS: Ctrl + left /
++            // right (Mission Control's "Move left / right a space").
++            const uint16_t arrow = dir ? KC_RIGHT : KC_LEFT;
++            tap_code16(mp_host_is_mac() ? LCTL(arrow) : LCTL(LGUI(arrow)));
 +            return false;
 +        }
 +        const uint8_t  steps = mp_knob_steps(knob, dir);

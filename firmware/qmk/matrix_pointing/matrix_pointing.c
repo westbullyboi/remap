@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 33
+#define MP_REVISION 34
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -676,7 +676,9 @@ static inline uint16_t mp_swipe_kc(uint8_t dir) {
 // ---------------------------------------------------------------------------
 // Knob settings (revision 32), kept in the key block below:
 //   mode[k][0]  turning: 0 the keymap's keycodes, 1 switch windows
-//               (Alt + Tab, Cmd + Tab on a Mac), 2 select the layer
+//               (Alt + Tab, Cmd + Tab on a Mac), 2 select the layer,
+//               3 (revision 34) switch virtual desktops (Ctrl + Win +
+//               left / right, Ctrl + left / right on a Mac)
 //   mode[k][1]  the same while the push switch is held (0 = knob_kc /
 //               the keymap, as before)
 //   accel[k]    turning fast sends more steps: 0 off, 1-3 stronger
@@ -685,7 +687,7 @@ static inline uint16_t mp_swipe_kc(uint8_t dir) {
 //   bar         show the knob's level (or the selected layer) on the LEDs
 //   layers      layers the layer selection goes through (0 .. layers - 1)
 //   switch_ms   window switching ends this long after the last step
-enum { MP_KNOB_KEYS = 0, MP_KNOB_WINDOWS, MP_KNOB_LAYERS };
+enum { MP_KNOB_KEYS = 0, MP_KNOB_WINDOWS, MP_KNOB_LAYERS, MP_KNOB_DESKTOPS };
 typedef struct __attribute__((packed)) {
     uint8_t  mode[2][2];
     uint8_t  accel[2];
@@ -818,7 +820,7 @@ static uint8_t *mp_knob_value_ptr(uint8_t id, uint8_t *size, uint8_t *lo, uint8_
     *lo              = 0;
     *hi              = 0xFF;
     if (id >= 0xBC && id <= 0xBF) {
-        *hi = 2;
+        *hi = MP_KNOB_DESKTOPS;
         return &c->mode[(id - 0xBC) / 2][(id - 0xBC) % 2];
     }
     if (id == 0xC0 || id == 0xC1) {
@@ -2456,6 +2458,13 @@ static bool mp_knob_process(uint16_t keycode, keyrecord_t *record) {
         }
         if (mode == MP_KNOB_LAYERS) {
             mp_layer_step(knob, dir);
+            return false;
+        }
+        if (mode == MP_KNOB_DESKTOPS) {
+            // Windows: Ctrl + Win + left / right; macOS: Ctrl + left /
+            // right (Mission Control's "Move left / right a space").
+            const uint16_t arrow = dir ? KC_RIGHT : KC_LEFT;
+            tap_code16(mp_host_is_mac() ? LCTL(arrow) : LCTL(LGUI(arrow)));
             return false;
         }
         const uint8_t  steps = mp_knob_steps(knob, dir);

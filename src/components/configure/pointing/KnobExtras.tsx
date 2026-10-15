@@ -15,6 +15,7 @@ import {
   KnobExtras,
   knobExtrasWrites,
 } from '../../../services/pointing/KnobExtras';
+import { fetchFirmwareRevision } from '../../../services/pointing/PointingSettings';
 import { SAVE_DELAY_MS, SaveState, UpdateNotice } from './EdgeKnobShared';
 
 // Firmware r32 knob settings: what turning does, acceleration, hold and
@@ -22,6 +23,9 @@ import { SAVE_DELAY_MS, SaveState, UpdateNotice } from './EdgeKnobShared';
 export function useKnobExtras(keyboard: IKeyboard | null) {
   const [supported, setSupported] = useState<boolean | null>(null);
   const [extras, setExtras] = useState<KnobExtras | null>(null);
+  // Firmware revision: virtual desktops need r34 (older firmware would
+  // take the value as the last mode it knows).
+  const [revision, setRevision] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const current = useRef<KnobExtras | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -32,6 +36,7 @@ export function useKnobExtras(keyboard: IKeyboard | null) {
     setSupported(null);
     setExtras(null);
     if (!keyboard) return;
+    fetchFirmwareRevision(keyboard).then((r) => !cancelled && setRevision(r));
     fetchKnobExtras(keyboard)
       .then((r) => {
         if (cancelled) return;
@@ -69,7 +74,7 @@ export function useKnobExtras(keyboard: IKeyboard | null) {
     });
   };
 
-  return { supported, extras, saveState, change };
+  return { supported, extras, saveState, change, revision };
 }
 
 type Extras = ReturnType<typeof useKnobExtras>;
@@ -126,7 +131,10 @@ export function KnobExtraRows(props: {
       aria-label={`${name} ${pushed ? t('Push and turn') : t('Turn')}`}
       onChange={(ev) => setMode(pushed, Number(ev.target.value))}
     >
-      {KNOB_MODES.map((m) => (
+      {KNOB_MODES.filter(
+        (m) =>
+          (m.revision ?? 0) <= x.revision || m.value === e.modes[knob][pushed]
+      ).map((m) => (
         <option key={m.value} value={m.value}>
           {t(m.label)}
         </option>

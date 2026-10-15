@@ -359,6 +359,7 @@ const KNOB_MODE_NAMES: { [v: number]: string } = {
   0: 'keys',
   1: 'switch windows',
   2: 'select the layer',
+  3: 'switch virtual desktops',
 };
 
 function failed(
