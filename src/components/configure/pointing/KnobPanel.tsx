@@ -18,6 +18,7 @@ import {
   useEdgeKnob,
 } from './EdgeKnobShared';
 import { edgeKnobPreview } from '../../../services/pointing/EdgeKnobPreview';
+import { KnobExtraRows, KnobOptionsCard, useKnobExtras } from './KnobExtras';
 
 // Knobs tab: what turning does, without and while pushing the knob.
 export function KnobPanel(props: { keyboard: IKeyboard | null }) {
@@ -26,6 +27,7 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
     CAP_KNOB_PRESS_TURN
   );
   const turn = useKnobTurn();
+  const extras = useKnobExtras(props.keyboard);
   // A direction whose key is being picked from the keycode palette.
   const [picking, setPicking] = useState<{
     encoderId: number;
@@ -46,7 +48,9 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
         </div>
         {values && (
           <div className="pointing-actions">
-            <SaveChip state={saveState} />
+            <SaveChip
+              state={saveState === 'saved' ? extras.saveState : saveState}
+            />
           </div>
         )}
       </div>
@@ -220,9 +224,16 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
                     )}
                   </div>
                 </div>
+                <KnobExtraRows
+                  knob={k}
+                  name={name}
+                  extras={extras}
+                  keyboard={props.keyboard}
+                />
               </section>
             );
           })}
+          <KnobOptionsCard extras={extras} />
           <section className="pointing-card">
             <div className="pointing-card-header">
               <h2>{t('How pushing works')}</h2>

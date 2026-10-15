@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 31
+#define MP_REVISION 32
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -674,6 +674,32 @@ static inline uint16_t mp_swipe_kc(uint8_t dir) {
 }
 
 // ---------------------------------------------------------------------------
+// Knob settings (revision 32), kept in the key block below:
+//   mode[k][0]  turning: 0 the keymap's keycodes, 1 switch windows
+//               (Alt + Tab, Cmd + Tab on a Mac), 2 select the layer
+//   mode[k][1]  the same while the push switch is held (0 = knob_kc /
+//               the keymap, as before)
+//   accel[k]    turning fast sends more steps: 0 off, 1-3 stronger
+//   hold_kc[k]  push switch held down for hold_ms: this keycode
+//   double_kc[k] pushed twice within double_ms: this keycode
+//   bar         show the knob's level (or the selected layer) on the LEDs
+//   layers      layers the layer selection goes through (0 .. layers - 1)
+//   switch_ms   window switching ends this long after the last step
+enum { MP_KNOB_KEYS = 0, MP_KNOB_WINDOWS, MP_KNOB_LAYERS };
+typedef struct __attribute__((packed)) {
+    uint8_t  mode[2][2];
+    uint8_t  accel[2];
+    uint16_t hold_kc[2];
+    uint16_t double_kc[2];
+    uint8_t  hold_ms;   // x10 ms
+    uint8_t  double_ms; // x10 ms
+    uint8_t  bar;
+    uint8_t  layers;
+    uint8_t  switch_ms; // x10 ms
+} mp_knob_cfg_t;
+#define MP_KNOB_CFG_DEFAULTS {.hold_ms = 40, .double_ms = 25, .bar = 1, .layers = 4, .switch_ms = 80}
+
+// ---------------------------------------------------------------------------
 // Window keys (revision 31): custom keys QK_KB_10..15 put the active window
 // on the left / right half, maximize, minimize, move it to the next display
 // or restore it, with the shortcut of the host OS: Windows' own (Win +
@@ -697,12 +723,18 @@ typedef struct __attribute__((packed)) {
     uint8_t  version;
     uint8_t  checksum;
     uint16_t window_kc[MP_WINDOW_KEYS][2]; // [PC, Mac]
+    // version 2 (revision 32): knobs
+    mp_knob_cfg_t knob;
 } mp_keys_t;
+#    define MP_KEYS_VERSION 2
+#    define MP_KEYS_V1_SIZE 28
 _Static_assert(sizeof(mp_keys_t) <= 64, "mp_keys_t must fit 64 bytes");
+_Static_assert(offsetof(mp_keys_t, knob) == MP_KEYS_V1_SIZE, "key block version 1 layout changed");
 
 static const mp_keys_t mp_keys_defaults = {
     .magic   = MP_KEY_MAGIC,
-    .version = 1,
+    .version = MP_KEYS_VERSION,
+    .knob    = MP_KNOB_CFG_DEFAULTS,
     .window_kc =
         {
             {LGUI(KC_LEFT), LCTL(LALT(KC_LEFT))},                // left half
@@ -715,27 +747,37 @@ static const mp_keys_t mp_keys_defaults = {
 };
 static mp_keys_t mp_keys = {0};
 
-static uint8_t mp_keys_checksum(const mp_keys_t *k) {
+static uint8_t mp_keys_checksum_n(const mp_keys_t *k, uint8_t size) {
     const uint8_t *b   = (const uint8_t *)k;
     uint8_t        sum = 0x3C;
-    for (uint8_t i = 4; i < sizeof(mp_keys_t); i++) sum = (uint8_t)((sum << 1 | sum >> 7) ^ b[i]);
+    for (uint8_t i = 4; i < size; i++) sum = (uint8_t)((sum << 1 | sum >> 7) ^ b[i]);
     return sum;
+}
+static uint8_t mp_keys_checksum(const mp_keys_t *k) {
+    return mp_keys_checksum_n(k, sizeof(mp_keys_t));
 }
 static void mp_keys_load(void) {
     eeprom_read_block(&mp_keys, (void *)(uintptr_t)MP_KEY_EEPROM_ADDR, sizeof(mp_keys));
-    if (mp_keys.magic != MP_KEY_MAGIC || mp_keys.version != 1 || mp_keys.checksum != mp_keys_checksum(&mp_keys)) {
+    if (mp_keys.magic == MP_KEY_MAGIC && mp_keys.version == 1 && mp_keys.checksum == mp_keys_checksum_n(&mp_keys, MP_KEYS_V1_SIZE)) {
+        // Revision 31: keep the window keys, the knob settings start at
+        // their defaults (written with the next save).
+        mp_keys.knob    = mp_keys_defaults.knob;
+        mp_keys.version = MP_KEYS_VERSION;
+        return;
+    }
+    if (mp_keys.magic != MP_KEY_MAGIC || mp_keys.version != MP_KEYS_VERSION || mp_keys.checksum != mp_keys_checksum(&mp_keys)) {
         mp_keys = mp_keys_defaults; // fresh (or the end of an old macro buffer)
     }
 }
 static void mp_keys_save(void) {
     mp_keys.magic    = MP_KEY_MAGIC;
-    mp_keys.version  = 1;
+    mp_keys.version  = MP_KEYS_VERSION;
     mp_keys.checksum = mp_keys_checksum(&mp_keys);
     eeprom_update_block(&mp_keys, (void *)(uintptr_t)MP_KEY_EEPROM_ADDR, sizeof(mp_keys));
 }
 
 // Mac or not, as the per-OS settings decide (fixed PC / Mac there wins).
-static bool mp_host_is_mac(void) {
+__attribute__((unused)) static bool mp_host_is_mac(void) {
     if (mp_os.enabled && mp_os.mode != 0) return mp_os.mode == 2;
     return mp_os_seen == OS_MACOS || mp_os_seen == OS_IOS;
 }
@@ -749,7 +791,69 @@ static bool mp_window_key(uint16_t keycode, bool pressed) {
     return false;
 }
 
+// Knob values (revision 32): 0xBC..0xCA, see mp_knob_cfg_t.
+//   0xBC / 0xBD  left knob: mode turning / while pushed
+//   0xBE / 0xBF  right knob: the same
+//   0xC0 / 0xC1  acceleration (left / right)
+//   0xC2 / 0xC3  left knob: hold keycode / double press keycode (2 bytes)
+//   0xC4 / 0xC5  right knob: the same
+//   0xC6 hold time, 0xC7 double press time, 0xC8 LED bar, 0xC9 layers,
+//   0xCA window switching end (x10 ms)
+#    define MP_KNOB_VALUE_FIRST 0xBC
+#    define MP_KNOB_VALUE_LAST 0xCA
+static uint8_t *mp_knob_value_ptr(uint8_t id, uint8_t *size, uint8_t *lo, uint8_t *hi) {
+    mp_knob_cfg_t *c = &mp_keys.knob;
+    *size            = 1;
+    *lo              = 0;
+    *hi              = 0xFF;
+    if (id >= 0xBC && id <= 0xBF) {
+        *hi = 2;
+        return &c->mode[(id - 0xBC) / 2][(id - 0xBC) % 2];
+    }
+    if (id == 0xC0 || id == 0xC1) {
+        *hi = 3;
+        return &c->accel[id - 0xC0];
+    }
+    if (id >= 0xC2 && id <= 0xC5) {
+        *size              = 2;
+        const uint8_t knob = (id - 0xC2) / 2;
+        return (uint8_t *)((id - 0xC2) % 2 ? &c->double_kc[knob] : &c->hold_kc[knob]);
+    }
+    switch (id) {
+        case 0xC6:
+            *lo = 15, *hi = 100;
+            return &c->hold_ms;
+        case 0xC7:
+            *lo = 10, *hi = 60;
+            return &c->double_ms;
+        case 0xC8:
+            *hi = 1;
+            return &c->bar;
+        case 0xC9:
+            *lo = 2, *hi = 16;
+            return &c->layers;
+        case 0xCA:
+            *lo = 30, *hi = 200;
+            return &c->switch_ms;
+    }
+    return NULL;
+}
+
 static bool mp_keys_get_value(uint8_t id, uint8_t *data) {
+    if (id >= MP_KNOB_VALUE_FIRST && id <= MP_KNOB_VALUE_LAST) {
+        uint8_t        size, lo, hi;
+        const uint8_t *p = mp_knob_value_ptr(id, &size, &lo, &hi);
+        if (p == NULL) return false;
+        if (size == 2) {
+            uint16_t v;
+            memcpy(&v, p, 2);
+            data[0] = v >> 8;
+            data[1] = v & 0xFF;
+        } else {
+            data[0] = *p;
+        }
+        return true;
+    }
     if (id < 0xB0 || id >= 0xB0 + MP_WINDOW_KEYS * 2) return false;
     uint16_t v;
     memcpy(&v, &mp_keys.window_kc[(id - 0xB0) / 2][(id - 0xB0) % 2], sizeof(v));
@@ -758,12 +862,30 @@ static bool mp_keys_get_value(uint8_t id, uint8_t *data) {
     return true;
 }
 static bool mp_keys_set_value(uint8_t id, const uint8_t *data) {
+    if (id >= MP_KNOB_VALUE_FIRST && id <= MP_KNOB_VALUE_LAST) {
+        uint8_t  size, lo, hi;
+        uint8_t *p = mp_knob_value_ptr(id, &size, &lo, &hi);
+        if (p == NULL) return false;
+        if (size == 2) {
+            const uint16_t v = (uint16_t)((data[0] << 8) | data[1]);
+            memcpy(p, &v, 2);
+        } else {
+            *p = data[0] < lo ? lo : data[0] > hi ? hi : data[0];
+        }
+        return true;
+    }
     if (id < 0xB0 || id >= 0xB0 + MP_WINDOW_KEYS * 2) return false;
     const uint16_t v = (uint16_t)((data[0] << 8) | data[1]);
     memcpy(&mp_keys.window_kc[(id - 0xB0) / 2][(id - 0xB0) % 2], &v, sizeof(v));
     return true;
 }
+#    define MP_KNOB_CFG (mp_keys.knob)
 #else
+static mp_knob_cfg_t mp_knob_cfg_fixed __attribute__((unused)) = MP_KNOB_CFG_DEFAULTS;
+#    define MP_KNOB_CFG (mp_knob_cfg_fixed)
+__attribute__((unused)) static bool mp_host_is_mac(void) {
+    return false;
+}
 static void mp_keys_load(void) {}
 static void mp_keys_save(void) {}
 static bool mp_window_key(uint16_t keycode, bool pressed) {
@@ -1797,6 +1919,30 @@ static void      mp_bar_note(uint8_t edge, uint16_t pos) {
 }
 #    define MP_BAR_HOLD_MS 700 // the bar stays this long after the last step
 
+// Knob bar (revision 32): the level of the knob turned last (or the layer
+// it selected), 0..MP_EDGE_SCALE. Set on the USB half, which sends it to
+// the other half with the split poll (glow packet 3, edge 4).
+static uint16_t mp_knob_bar_pos  = 0;
+static uint16_t mp_knob_bar_time = 0;
+static bool     mp_knob_bar_set  = false;
+__attribute__((unused)) static void mp_knob_bar_note(uint16_t pos) {
+    mp_knob_bar_pos  = pos;
+    mp_knob_bar_time = timer_read();
+    mp_knob_bar_set  = true;
+}
+static bool mp_knob_bar_active(void) {
+    return mp_knob_bar_set && timer_elapsed(mp_knob_bar_time) < MP_BAR_HOLD_MS;
+}
+// Over the master's glow in the poll to the other half.
+__attribute__((unused)) static void mp_knob_bar_pack(uint8_t *o) {
+    if (!mp_knob_bar_active()) return;
+    o[0] = 3;
+    o[1] = mp_knob_bar_pos >> 8;
+    o[2] = mp_knob_bar_pos & 0xFF;
+    o[3] = 4;
+    o[4] = 0;
+}
+
 static void mp_glow_update(const digitizer_t *state) {
     for (uint8_t i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
         const digitizer_contact_t *c = &state->contacts[i];
@@ -2031,72 +2177,228 @@ bool digitizer_task_user(digitizer_t *const state) {
 // knob has such keycodes acts on release (and only when the knob was not
 // turned), so pushing to turn does not also fire it. Push keycodes that are
 // not plain keys (layer keys, mod-taps, ...) keep acting on press.
+//
+// Revision 32 (settings: mp_knob_cfg_t):
+// - acceleration: steps closer together than 60 ms send more keycodes;
+// - push switch held (hold_kc) / pushed twice (double_kc): the switch's
+//   own keycode then goes on release, or once the double press time passed;
+// - turning (or turning while pushed) can switch windows or select the
+//   layer instead of sending keycodes;
+// - the LEDs show the knob's level, or the selected layer, as a bar.
 #ifdef MP_KNOBS
 typedef struct {
     uint8_t row, col;
 } mp_knob_key_t;
 static const mp_knob_key_t mp_knob_keys[] = MATRIX_POINTING_KNOB_KEYS;
 #    define MP_KNOBS_USED (ARRAY_SIZE(mp_knob_keys) < MP_KNOB_COUNT ? ARRAY_SIZE(mp_knob_keys) : MP_KNOB_COUNT)
+#    define MP_KNOB_LEVELS 20 // steps of the LED bar for keycodes
 
 static bool     mp_knob_held[MP_KNOB_COUNT]     = {0};
 static bool     mp_knob_turned[MP_KNOB_COUNT]   = {0};
 static bool     mp_knob_deferred[MP_KNOB_COUNT] = {0};
 static uint16_t mp_knob_sent[MP_KNOB_COUNT][2]  = {{0}};
+// Push switch: when it went down, whether the hold keycode went, the
+// keycode of a first press waiting for a second one (and when).
+static uint16_t mp_knob_down_at[MP_KNOB_COUNT]   = {0};
+static bool     mp_knob_hold_done[MP_KNOB_COUNT] = {0};
+static uint16_t mp_knob_waiting[MP_KNOB_COUNT]   = {0};
+static uint16_t mp_knob_wait_at[MP_KNOB_COUNT]   = {0};
+// Acceleration: the last step of each knob.
+static uint16_t mp_knob_step_at[MP_KNOB_COUNT]  = {0};
+static uint8_t  mp_knob_step_dir[MP_KNOB_COUNT] = {0};
+// LED bar level of each knob (keycodes), 0..MP_KNOB_LEVELS.
+static uint8_t mp_knob_level[MP_KNOB_COUNT] = {MP_KNOB_LEVELS / 2, MP_KNOB_LEVELS / 2};
+// Window switching: the modifier held (0 none) and the last step.
+static uint8_t  mp_switch_mod = 0;
+static uint16_t mp_switch_at  = 0;
 
 static bool mp_knob_has_alt(uint8_t knob) {
-    return mp_knob_kc(knob, 0) || mp_knob_kc(knob, 1);
+    const mp_knob_cfg_t *c = &MP_KNOB_CFG;
+    return mp_knob_kc(knob, 0) || mp_knob_kc(knob, 1) || c->mode[knob][1] != MP_KNOB_KEYS;
+}
+
+static bool mp_knob_has_gestures(uint8_t knob) {
+    const mp_knob_cfg_t *c = &MP_KNOB_CFG;
+    return c->hold_kc[knob] != KC_NO || c->double_kc[knob] != KC_NO;
+}
+
+// Steps for one detent: more when turned fast.
+static uint8_t mp_knob_steps(uint8_t knob, uint8_t dir) {
+    const uint8_t  strength = MP_KNOB_CFG.accel[knob];
+    const uint16_t dt       = timer_elapsed(mp_knob_step_at[knob]);
+    const bool     same     = mp_knob_step_dir[knob] == dir + 1;
+    mp_knob_step_at[knob]   = timer_read();
+    mp_knob_step_dir[knob]  = dir + 1;
+    if (!strength || !same) return 1;
+    if (dt <= 30) return 1 + strength * 2;
+    if (dt <= 60) return 1 + strength;
+    return 1;
+}
+
+#    ifdef MP_EDGES
+static void mp_knob_bar_note(uint16_t pos);
+#    endif
+static void mp_knob_show(uint8_t knob, uint8_t level, uint8_t of) {
+#    ifdef MP_EDGES
+    if (MP_KNOB_CFG.bar && of) mp_knob_bar_note((uint32_t)level * MP_EDGE_SCALE / of);
+#    endif
+}
+
+static void mp_knob_level_step(uint8_t knob, uint8_t dir, uint8_t steps) {
+    int16_t level = mp_knob_level[knob] + (dir ? steps : -(int16_t)steps);
+    if (level < 0) level = 0;
+    if (level > MP_KNOB_LEVELS) level = MP_KNOB_LEVELS;
+    mp_knob_level[knob] = level;
+    mp_knob_show(knob, level, MP_KNOB_LEVELS);
+}
+
+static void mp_switch_end(void) {
+    if (!mp_switch_mod) return;
+    unregister_code(mp_switch_mod);
+    mp_switch_mod = 0;
+}
+
+// One step of window switching: Alt (Cmd on a Mac) is held until the knob
+// rests for switch_ms, so the steps go through the windows.
+static void mp_switch_step(uint8_t dir) {
+    const uint8_t mod = mp_host_is_mac() ? KC_LGUI : KC_LALT;
+    if (mp_switch_mod != mod) {
+        mp_switch_end();
+        register_code(mod);
+        mp_switch_mod = mod;
+    }
+    mp_switch_at = timer_read();
+    tap_code16(dir ? KC_TAB : LSFT(KC_TAB));
+}
+
+static uint8_t mp_layer_limit(void) {
+    uint8_t n = MP_KNOB_CFG.layers;
+#    ifdef DYNAMIC_KEYMAP_LAYER_COUNT
+    if (n > DYNAMIC_KEYMAP_LAYER_COUNT) n = DYNAMIC_KEYMAP_LAYER_COUNT;
+#    endif
+    return n < 2 ? 2 : n;
+}
+
+// One step of layer selection: the next / previous layer (wrapping).
+static void mp_layer_step(uint8_t knob, uint8_t dir) {
+    const uint8_t n   = mp_layer_limit();
+    uint8_t       cur = get_highest_layer(layer_state);
+    if (cur >= n) cur = n - 1;
+    const uint8_t next = dir ? (cur + 1) % n : (cur + n - 1) % n;
+    layer_move(next);
+    mp_knob_show(knob, next + 1, n);
+}
+
+// Sends the keycode `steps` times (the first one may be left to QMK).
+static void mp_knob_send(uint16_t keycode, uint8_t steps) {
+    for (uint8_t i = 0; i < steps; i++) mp_send_keycode(keycode);
 }
 
 static bool mp_knob_process(uint16_t keycode, keyrecord_t *record) {
     const keyevent_t *ev = &record->event;
     if (IS_ENCODEREVENT(*ev)) {
         const uint8_t knob = ev->key.col; // encoder index
-        if (knob >= MP_KNOBS_USED || !mp_knob_held[knob]) return true;
-        const uint8_t dir = ev->type == ENCODER_CW_EVENT ? 1 : 0;
-        if (ev->pressed) {
-            mp_knob_turned[knob] = true;
-            const uint16_t alt   = mp_knob_kc(knob, dir);
-            if (alt == KC_NO) return true; // not set: the usual keycode
-#    ifdef MP_SMOOTH
-            if (mp_is_mod_wheel(alt)) {
-                mp_mod_wheel(alt);
+        if (knob >= MP_KNOBS_USED) return true;
+        const uint8_t        dir    = ev->type == ENCODER_CW_EVENT ? 1 : 0;
+        const bool           pushed = mp_knob_held[knob];
+        const mp_knob_cfg_t *c      = &MP_KNOB_CFG;
+        const uint8_t        mode   = c->mode[knob][pushed ? 1 : 0];
+        if (!ev->pressed) {
+            if (mp_knob_sent[knob][dir]) {
+                unregister_code16(mp_knob_sent[knob][dir]);
+                mp_knob_sent[knob][dir] = 0;
                 return false;
             }
+            return mode == MP_KNOB_KEYS;
+        }
+        if (pushed) mp_knob_turned[knob] = true;
+        if (mode == MP_KNOB_WINDOWS) {
+            mp_switch_step(dir);
+            return false;
+        }
+        if (mode == MP_KNOB_LAYERS) {
+            mp_layer_step(knob, dir);
+            return false;
+        }
+        const uint8_t  steps = mp_knob_steps(knob, dir);
+        const uint16_t alt   = pushed ? mp_knob_kc(knob, dir) : KC_NO;
+        mp_knob_level_step(knob, dir, steps);
+        if (alt == KC_NO) {
+            // The keymap's keycode: QMK sends one, extra steps go here.
+            if (steps > 1 && keycode <= QK_MODS_MAX) mp_knob_send(keycode, steps - 1);
+            return true;
+        }
+#    ifdef MP_SMOOTH
+        if (mp_is_mod_wheel(alt)) {
+            for (uint8_t i = 0; i < steps; i++) mp_mod_wheel(alt);
+            return false;
+        }
 #    endif
 #    ifdef MP_HIRES
-            if (mp_is_wheel_keycode(alt)) {
-                mp_wheel_notch(alt);
-                return false;
-            }
+        if (mp_is_wheel_keycode(alt)) {
+            for (uint8_t i = 0; i < steps; i++) mp_wheel_notch(alt);
+            return false;
+        }
 #    endif
-            mp_knob_sent[knob][dir] = alt;
-            register_code16(alt);
-            return false;
-        }
-        if (mp_knob_sent[knob][dir]) {
-            unregister_code16(mp_knob_sent[knob][dir]);
-            mp_knob_sent[knob][dir] = 0;
-            return false;
-        }
-        return true;
+        if (steps > 1) mp_knob_send(alt, steps - 1);
+        mp_knob_sent[knob][dir] = alt;
+        register_code16(alt);
+        return false;
     }
     if (ev->type != KEY_EVENT) return true;
     for (uint8_t k = 0; k < MP_KNOBS_USED; k++) {
         if (ev->key.row != mp_knob_keys[k].row || ev->key.col != mp_knob_keys[k].col) continue;
+        const bool plain = keycode <= QK_MODS_MAX;
         if (ev->pressed) {
-            mp_knob_held[k]     = true;
-            mp_knob_turned[k]   = false;
-            mp_knob_deferred[k] = mp_knob_has_alt(k) && keycode <= QK_MODS_MAX;
+            mp_knob_held[k]      = true;
+            mp_knob_turned[k]    = false;
+            mp_knob_hold_done[k] = false;
+            mp_knob_down_at[k]   = timer_read();
+            mp_knob_deferred[k]  = plain && (mp_knob_has_alt(k) || mp_knob_has_gestures(k));
             return !mp_knob_deferred[k];
         }
         mp_knob_held[k] = false;
         if (!mp_knob_deferred[k]) return true;
         mp_knob_deferred[k] = false;
-        if (!mp_knob_turned[k] && keycode != KC_NO) tap_code16(keycode);
+        if (mp_knob_turned[k] || mp_knob_hold_done[k]) return false;
+        const uint16_t double_kc = MP_KNOB_CFG.double_kc[k];
+        if (double_kc != KC_NO) {
+            if (mp_knob_waiting[k]) {
+                // The second press.
+                mp_knob_waiting[k] = 0;
+                mp_send_keycode(double_kc);
+            } else {
+                mp_knob_waiting[k] = keycode == KC_NO ? KC_TRANSPARENT : keycode;
+                mp_knob_wait_at[k] = timer_read();
+            }
+            return false;
+        }
+        if (keycode != KC_NO) tap_code16(keycode);
         return false;
     }
     return true;
 }
+
+// Timers: hold keycode, a single press after the double press time, the
+// end of window switching.
+static void mp_knob_task(void) {
+    const mp_knob_cfg_t *c = &MP_KNOB_CFG;
+    for (uint8_t k = 0; k < MP_KNOBS_USED; k++) {
+        if (mp_knob_held[k] && mp_knob_deferred[k] && !mp_knob_turned[k] && !mp_knob_hold_done[k] && c->hold_kc[k] != KC_NO && timer_elapsed(mp_knob_down_at[k]) >= (uint16_t)c->hold_ms * 10) {
+            mp_knob_hold_done[k] = true;
+            mp_knob_waiting[k]   = 0;
+            mp_send_keycode(c->hold_kc[k]);
+        }
+        if (mp_knob_waiting[k] && !mp_knob_held[k] && timer_elapsed(mp_knob_wait_at[k]) >= (uint16_t)c->double_ms * 10) {
+            const uint16_t kc  = mp_knob_waiting[k];
+            mp_knob_waiting[k] = 0;
+            if (kc != KC_TRANSPARENT) tap_code16(kc);
+        }
+    }
+    if (mp_switch_mod && timer_elapsed(mp_switch_at) >= (uint16_t)c->switch_ms * 10) mp_switch_end();
+}
+#else
+static void mp_knob_task(void) {}
 #endif // MP_KNOBS
 
 // ---------------------------------------------------------------------------
@@ -2191,7 +2493,14 @@ static void mp_sync_config_slave(uint8_t in_len, const void *in, uint8_t out_len
 // touchpad is on the master half.
 static void mp_sync_swipe_slave(uint8_t in_len, const void *in, uint8_t out_len, void *out) {
 #    ifdef MP_EDGES
-    if (in_len >= 5 && !mp_edge_on_this_side()) mp_glow_unpack((const uint8_t *)in);
+    if (in_len >= 5) {
+        const uint8_t *b = (const uint8_t *)in;
+        if (b[0] == 3 && b[3] == 4) {
+            mp_knob_bar_note((b[1] << 8) | b[2]); // the knob bar (revision 32)
+        } else if (!mp_edge_on_this_side()) {
+            mp_glow_unpack(b);
+        }
+    }
 #    endif
 #    ifdef MP_GUIDE
     if (in_len >= 5 + MP_GUIDE_PACKET) mp_guide_unpack((const uint8_t *)in + 5);
@@ -2313,6 +2622,7 @@ static void mp_split_housekeeping(void) {
 #    endif
 #    ifdef MP_EDGES
         if (mp_edge_on_this_side()) mp_glow_pack(&mp_glow_local, glow);
+        mp_knob_bar_pack(glow);
 #    endif
         const uint16_t started = timer_read();
         if (!is_transport_connected()) {
@@ -2940,6 +3250,7 @@ void matrix_pointing_housekeeping(void) {
 #    endif
 #endif
     mp_os_task();
+    mp_knob_task();
     mp_split_housekeeping();
     mp_mirror_task();
     mp_sensor_task();
@@ -2970,21 +3281,9 @@ static const uint8_t mp_led_hs[][2] = {
 };
 
 #ifdef MP_EDGES
-// Edge slider bar (revision 30): while an edge slider is in use, the LEDs
-// show the finger's place along it as a level, filling from the left (top
-// and bottom edges) or from the bottom (side edges) up to it, brightest at
-// the front. Returns true when it drew.
-static bool mp_bar_render(const mp_glow_t *g, uint8_t led_min, uint8_t led_max) {
-#    ifdef SPLIT_KEYBOARD
-    const bool synced = !is_keyboard_master();
-#    else
-    const bool synced = false;
-#    endif
-    const uint8_t on    = synced ? mp_bar_synced[0] : mp_ext.edge_bar;
-    const uint8_t color = synced ? mp_bar_synced[1] : mp_ext.edge_bar_color;
-    if (!on || !g->bar) return false;
-    const uint16_t since = timer_elapsed(g->bar_time);
-    if (since >= MP_BAR_HOLD_MS) return false;
+// Draws a bar `pos` (0..MP_EDGE_SCALE) along the keyboard: up from the
+// bottom (`side`) or from the left, faded `since` ms after the last step.
+static void mp_bar_draw(bool side, uint16_t pos, uint16_t since, uint8_t color, uint8_t led_min, uint8_t led_max) {
     // Fade out over the last third.
     const int32_t fade = since < MP_BAR_HOLD_MS * 2 / 3 ? 256 : (int32_t)(MP_BAR_HOLD_MS - since) * 256 * 3 / MP_BAR_HOLD_MS;
     int16_t x0 = INT16_MAX, x1 = INT16_MIN, y0 = INT16_MAX, y1 = INT16_MIN;
@@ -2995,9 +3294,8 @@ static bool mp_bar_render(const mp_glow_t *g, uint8_t led_min, uint8_t led_max) 
         if (pt.y < y0) y0 = pt.y;
         if (pt.y > y1) y1 = pt.y;
     }
-    const bool    side  = g->bar - 1 < 2;
     const int32_t span  = side ? (y1 - y0) : (x1 - x0);
-    const int32_t front = (int32_t)g->bar_pos * span / MP_EDGE_SCALE; // from the start
+    const int32_t front = (int32_t)pos * span / MP_EDGE_SCALE; // from the start
     uint8_t       hue = rgb_matrix_get_hue(), sat = rgb_matrix_get_sat();
     if (color >= 2 && color - 2 < (int)ARRAY_SIZE(mp_led_hs)) {
         hue = mp_led_hs[color - 2][0];
@@ -3019,6 +3317,29 @@ static bool mp_bar_render(const mp_glow_t *g, uint8_t led_min, uint8_t led_max) 
         const rgb_t rgb = hsv_to_rgb(hsv);
         rgb_matrix_set_color(i, rgb.r, rgb.g, rgb.b);
     }
+}
+
+// Edge slider bar (revision 30): while an edge slider is in use, the LEDs
+// show the finger's place along it as a level, filling from the left (top
+// and bottom edges) or from the bottom (side edges) up to it, brightest at
+// the front. Returns true when it drew.
+static bool mp_bar_render(const mp_glow_t *g, uint8_t led_min, uint8_t led_max) {
+#    ifdef SPLIT_KEYBOARD
+    const bool synced = !is_keyboard_master();
+#    else
+    const bool synced = false;
+#    endif
+    const uint8_t color = synced ? mp_bar_synced[1] : mp_ext.edge_bar_color;
+    // The knob bar (revision 32; on the other half it only arrives when on).
+    if (mp_knob_bar_active()) {
+        mp_bar_draw(false, mp_knob_bar_pos, timer_elapsed(mp_knob_bar_time), color, led_min, led_max);
+        return true;
+    }
+    const uint8_t on = synced ? mp_bar_synced[0] : mp_ext.edge_bar;
+    if (!on || !g->bar) return false;
+    const uint16_t since = timer_elapsed(g->bar_time);
+    if (since >= MP_BAR_HOLD_MS) return false;
+    mp_bar_draw(g->bar - 1 < 2, g->bar_pos, since, color, led_min, led_max);
     return true;
 }
 

@@ -161,6 +161,26 @@ export default function SelfTestPanel() {
         ...where(10 + i),
       });
     });
+    const knobItems: [string, string][] = [
+      [
+        'knobAccel',
+        'Turn a knob fast: it goes further than turning slowly (acceleration on)',
+      ],
+      ['knobHold', 'Hold a knob down: the hold key is sent'],
+      ['knobDouble', 'Push a knob twice quickly: the double press key is sent'],
+      [
+        'knobWindows',
+        'Knob set to switch windows: turning goes through the windows, resting picks one',
+      ],
+      [
+        'knobLayers',
+        'Knob set to select the layer: turning changes the layer and the LEDs show which',
+      ],
+      ['knobBar', 'Turn a knob: the LEDs show a bar for a moment'],
+    ];
+    knobItems.forEach(([id, text]) =>
+      list.push({ id, group: 'r32', label: tr(text) })
+    );
     list.push(
       {
         id: 'os',

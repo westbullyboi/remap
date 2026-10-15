@@ -85,6 +85,8 @@ export type FirmwareReport = {
   detectedOs: number;
   // Window key shortcuts [key][0 PC / 1 Mac], null on older firmware.
   windowKeys: number[][] | null;
+  // Knob modes [knob][turning, pushed] and acceleration (r32).
+  knobs?: { modes: number[][]; accel: number[] } | null;
 };
 
 export async function runFirmwareChecks(
@@ -292,8 +294,54 @@ export async function runFirmwareChecks(
     });
   }
 
+  // r32: knobs.
+  const knobModes: number[] = [];
+  let knobsFailed: 'old' | 'error' | null = null;
+  for (const id of [0xbc, 0xbd, 0xbe, 0xbf, 0xc0, 0xc1]) {
+    const r = await read(id, 1);
+    if (typeof r === 'string') {
+      knobsFailed = r;
+      break;
+    }
+    knobModes.push(r.value);
+  }
+  if (knobsFailed) {
+    checks.push(failed('knobs', 'Knobs', 32, knobsFailed));
+  } else {
+    report.knobs = {
+      modes: [
+        [knobModes[0], knobModes[1]],
+        [knobModes[2], knobModes[3]],
+      ],
+      accel: [knobModes[4], knobModes[5]],
+    };
+    const mode = (v: number) => KNOB_MODE_NAMES[v] ?? `#${v}`;
+    checks.push({
+      id: 'knobs',
+      label: 'Knobs',
+      revision: 32,
+      status: 'ok',
+      detail:
+        'Left: {{l0}} / pushed {{l1}}; right: {{r0}} / pushed {{r1}}; acceleration {{a0}} / {{a1}}',
+      values: {
+        l0: mode(knobModes[0]),
+        l1: mode(knobModes[1]),
+        r0: mode(knobModes[2]),
+        r1: mode(knobModes[3]),
+        a0: knobModes[4],
+        a1: knobModes[5],
+      },
+    });
+  }
+
   return report;
 }
+
+const KNOB_MODE_NAMES: { [v: number]: string } = {
+  0: 'keys',
+  1: 'switch windows',
+  2: 'select the layer',
+};
 
 function failed(
   id: string,
