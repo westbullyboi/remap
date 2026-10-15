@@ -334,6 +334,24 @@ export async function runFirmwareChecks(
     });
   }
 
+  // r33: two-finger rotation.
+  const rot = await read(0xcc, 2);
+  if (typeof rot === 'string') {
+    checks.push(failed('rotation', 'Turn two fingers', 33, rot));
+  } else {
+    const ccw = await read(0xcb, 2);
+    const step = await read(0xcd, 1);
+    const on = rot.value !== 0 || (typeof ccw !== 'string' && ccw.value !== 0);
+    checks.push({
+      id: 'rotation',
+      label: 'Turn two fingers',
+      revision: 33,
+      status: 'ok',
+      detail: on ? 'On, a key every {{step}} degrees' : 'Gesture off',
+      values: { step: typeof step === 'string' ? '?' : step.value },
+    });
+  }
+
   return report;
 }
 

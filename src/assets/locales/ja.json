@@ -1162,5 +1162,14 @@
   "Turn a knob: the LEDs show a bar for a moment": "ノブを回す：LED に一瞬バーが表示される",
   "Hold a knob down: the hold key is sent": "ノブを長押し：長押しキーが送られる",
   "Push a knob twice quickly: the double press key is sent": "ノブを素早く2回押す：2回押しキーが送られる",
-  "No acceleration": "なし"
+  "No acceleration": "なし",
+  "Turn two fingers": "2本指で回す",
+  "Put two fingers on the touchpad and turn them like a knob. It starts after about 15 degrees of turning; moving both fingers the same way stays a scroll.": "タッチパッドに2本の指を置き、ノブのようにひねります。約15°回すと反応し始めます。2本の指を同じ方向に動かした場合は、これまでどおりスクロールになります。",
+  "Action": "動作",
+  "\"None\" turns the gesture off.": "「なし」にすると、この操作を無効にします。",
+  "Turn per step": "1回分の角度",
+  "How far to turn for one key (smaller = more steps).": "キーを1回送るのに必要な回転角です（小さいほど細かく反応します）。",
+  "On, a key every {{step}} degrees": "オン、{{step}}° ごとにキーを送信",
+  "Turn two fingers on the touchpad: the volume (or the set key) changes; scrolling with two fingers still scrolls": "タッチパッドで2本指をひねる：音量（または設定したキー）が変わる。2本指スクロールは従来どおり動く",
+  "Gesture off": "オフ"
 }

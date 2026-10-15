@@ -178,8 +178,16 @@ export default function SelfTestPanel() {
       ],
       ['knobBar', 'Turn a knob: the LEDs show a bar for a moment'],
     ];
+    knobItems.push([
+      'rotation',
+      'Turn two fingers on the touchpad: the volume (or the set key) changes; scrolling with two fingers still scrolls',
+    ]);
     knobItems.forEach(([id, text]) =>
-      list.push({ id, group: 'r32', label: tr(text) })
+      list.push({
+        id,
+        group: id === 'rotation' ? 'r33' : 'r32',
+        label: tr(text),
+      })
     );
     list.push(
       {

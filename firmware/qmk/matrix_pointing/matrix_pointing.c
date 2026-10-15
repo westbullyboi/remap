@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 32
+#define MP_REVISION 33
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -725,16 +725,23 @@ typedef struct __attribute__((packed)) {
     uint16_t window_kc[MP_WINDOW_KEYS][2]; // [PC, Mac]
     // version 2 (revision 32): knobs
     mp_knob_cfg_t knob;
+    // version 3 (revision 33): two-finger rotation
+    uint16_t rot_kc[2]; // [counter-clockwise, clockwise], 0 = off
+    uint8_t  rot_step;  // degrees per keycode
 } mp_keys_t;
-#    define MP_KEYS_VERSION 2
+#    define MP_KEYS_VERSION 3
 #    define MP_KEYS_V1_SIZE 28
+#    define MP_KEYS_V2_SIZE (MP_KEYS_V1_SIZE + sizeof(mp_knob_cfg_t))
 _Static_assert(sizeof(mp_keys_t) <= 64, "mp_keys_t must fit 64 bytes");
 _Static_assert(offsetof(mp_keys_t, knob) == MP_KEYS_V1_SIZE, "key block version 1 layout changed");
+_Static_assert(offsetof(mp_keys_t, rot_kc) == MP_KEYS_V2_SIZE, "key block version 2 layout changed");
 
 static const mp_keys_t mp_keys_defaults = {
     .magic   = MP_KEY_MAGIC,
     .version = MP_KEYS_VERSION,
     .knob    = MP_KNOB_CFG_DEFAULTS,
+    .rot_kc   = {KC_AUDIO_VOL_DOWN, KC_AUDIO_VOL_UP},
+    .rot_step = 15,
     .window_kc =
         {
             {LGUI(KC_LEFT), LCTL(LALT(KC_LEFT))},                // left half
@@ -758,11 +765,13 @@ static uint8_t mp_keys_checksum(const mp_keys_t *k) {
 }
 static void mp_keys_load(void) {
     eeprom_read_block(&mp_keys, (void *)(uintptr_t)MP_KEY_EEPROM_ADDR, sizeof(mp_keys));
-    if (mp_keys.magic == MP_KEY_MAGIC && mp_keys.version == 1 && mp_keys.checksum == mp_keys_checksum_n(&mp_keys, MP_KEYS_V1_SIZE)) {
-        // Revision 31: keep the window keys, the knob settings start at
-        // their defaults (written with the next save).
-        mp_keys.knob    = mp_keys_defaults.knob;
-        mp_keys.version = MP_KEYS_VERSION;
+    // Older versions (1: revision 31, 2: 32): keep what they had, the new
+    // settings start at their defaults (written with the next save).
+    static const uint8_t old_sizes[] = {0, MP_KEYS_V1_SIZE, MP_KEYS_V2_SIZE};
+    if (mp_keys.magic == MP_KEY_MAGIC && mp_keys.version >= 1 && mp_keys.version < MP_KEYS_VERSION && mp_keys.checksum == mp_keys_checksum_n(&mp_keys, old_sizes[mp_keys.version])) {
+        mp_keys_t migrated = mp_keys_defaults;
+        memcpy((uint8_t *)&migrated + 4, (const uint8_t *)&mp_keys + 4, old_sizes[mp_keys.version] - 4);
+        mp_keys = migrated;
         return;
     }
     if (mp_keys.magic != MP_KEY_MAGIC || mp_keys.version != MP_KEYS_VERSION || mp_keys.checksum != mp_keys_checksum(&mp_keys)) {
@@ -799,8 +808,10 @@ static bool mp_window_key(uint16_t keycode, bool pressed) {
 //   0xC4 / 0xC5  right knob: the same
 //   0xC6 hold time, 0xC7 double press time, 0xC8 LED bar, 0xC9 layers,
 //   0xCA window switching end (x10 ms)
+//   0xCB / 0xCC  two-finger rotation (revision 33): keycode counter-clockwise
+//                / clockwise (2 bytes, 0 = off); 0xCD degrees per keycode
 #    define MP_KNOB_VALUE_FIRST 0xBC
-#    define MP_KNOB_VALUE_LAST 0xCA
+#    define MP_KNOB_VALUE_LAST 0xCD
 static uint8_t *mp_knob_value_ptr(uint8_t id, uint8_t *size, uint8_t *lo, uint8_t *hi) {
     mp_knob_cfg_t *c = &mp_keys.knob;
     *size            = 1;
@@ -835,6 +846,13 @@ static uint8_t *mp_knob_value_ptr(uint8_t id, uint8_t *size, uint8_t *lo, uint8_
         case 0xCA:
             *lo = 30, *hi = 200;
             return &c->switch_ms;
+        case 0xCB:
+        case 0xCC:
+            *size = 2;
+            return (uint8_t *)&mp_keys.rot_kc[id - 0xCB];
+        case 0xCD:
+            *lo = 5, *hi = 45;
+            return &mp_keys.rot_step;
     }
     return NULL;
 }
@@ -880,7 +898,19 @@ static bool mp_keys_set_value(uint8_t id, const uint8_t *data) {
     return true;
 }
 #    define MP_KNOB_CFG (mp_keys.knob)
+__attribute__((unused)) static uint16_t mp_rot_kc(uint8_t dir) {
+    return mp_keys.rot_kc[dir];
+}
+__attribute__((unused)) static uint8_t mp_rot_step(void) {
+    return mp_keys.rot_step;
+}
 #else
+__attribute__((unused)) static uint16_t mp_rot_kc(uint8_t dir) {
+    return KC_NO;
+}
+__attribute__((unused)) static uint8_t mp_rot_step(void) {
+    return 15;
+}
 static mp_knob_cfg_t mp_knob_cfg_fixed __attribute__((unused)) = MP_KNOB_CFG_DEFAULTS;
 #    define MP_KNOB_CFG (mp_knob_cfg_fixed)
 __attribute__((unused)) static bool mp_host_is_mac(void) {
@@ -1720,6 +1750,113 @@ static void mp_touch_start(uint8_t i, int16_t u, int16_t v, uint8_t fingers) {
 static void mp_glow_update(const digitizer_t *state);
 static void mp_bar_note(uint8_t edge, uint16_t pos);
 
+// Two-finger rotation (revision 33): turning two fingers on the pad sends a
+// keycode every rot_step degrees (volume by default). It starts once the
+// fingers turned 15 degrees and the turn moved them further than their
+// middle moved (so a two-finger scroll stays a scroll); from then on the
+// two fingers are hidden from the cursor / scrolling until they lift.
+// Runs on the touchpad half; the other half's steps go to the USB half
+// with the split poll. The touchpad half without USB gets on / step from
+// the split sync.
+#    define MP_ROT_START (15 * 16) // degrees x 16
+static uint8_t mp_rot_synced[2]   = {0, 15}; // on, degrees (from the USB half)
+static volatile int8_t mp_pending_rot = 0;   // on the touchpad half without USB
+
+static bool mp_rot_enabled(void) {
+    return mp_edge_is_master() ? (mp_rot_kc(0) || mp_rot_kc(1)) : mp_rot_synced[0];
+}
+static uint8_t mp_rot_step_now(void) {
+    const uint8_t step = mp_edge_is_master() ? mp_rot_step() : mp_rot_synced[1];
+    return step < 5 ? 5 : step > 45 ? 45 : step;
+}
+
+static void mp_rot_emit(uint8_t clockwise) {
+    if (!mp_edge_is_master()) {
+        const int8_t n = mp_pending_rot;
+        if (clockwise && n < 100) mp_pending_rot = n + 1;
+        if (!clockwise && n > -100) mp_pending_rot = n - 1;
+        return;
+    }
+    mp_send_keycode(mp_rot_kc(clockwise ? 1 : 0));
+}
+
+// Angle from vector a to vector b, degrees x 16 (+ = clockwise as the
+// user sees the pad, v down). Small steps: atan(cross / dot) ~ cross / dot.
+static int32_t mp_rot_delta(int32_t ax, int32_t ay, int32_t bx, int32_t by) {
+    const int64_t cross = (int64_t)ax * by - (int64_t)ay * bx;
+    const int64_t dot   = (int64_t)ax * bx + (int64_t)ay * by;
+    if (dot <= 0) return 0; // turned too far in one frame: skip it
+    int64_t d = cross * 917 / dot; // 180 / pi * 16
+    if (d > 45 * 16) d = 45 * 16;
+    if (d < -45 * 16) d = -45 * 16;
+    return (int32_t)d;
+}
+
+static void mp_rot_update(digitizer_t *const state, uint8_t fingers) {
+    static bool    tracking = false, engaged = false, given_up = false;
+    static int16_t last_dx = 0, last_dy = 0, last_cx = 0, last_cy = 0;
+    static int32_t turned = 0, travel = 0, steps = 0;
+    static uint8_t first = 0, second = 0;
+    if (fingers != 2 || !mp_rot_enabled()) {
+        tracking = engaged = given_up = false;
+        return;
+    }
+    int8_t found[2] = {-1, -1};
+    for (uint8_t i = 0, n = 0; i < DIGITIZER_CONTACT_COUNT && n < 2; i++) {
+        if (state->contacts[i].type == FINGER && state->contacts[i].tip) found[n++] = i;
+    }
+    if (found[1] < 0) return; // one of them is an edge slider
+    int16_t u0, v0, u1, v1;
+    mp_edge_position(&state->contacts[found[0]], &u0, &v0);
+    mp_edge_position(&state->contacts[found[1]], &u1, &v1);
+    const int16_t dx = u1 - u0, dy = v1 - v0;
+    const int16_t cx = (u0 + u1) / 2, cy = (v0 + v1) / 2;
+    if (!tracking || first != found[0] || second != found[1]) {
+        tracking = true;
+        engaged = given_up = false;
+        first   = found[0];
+        second  = found[1];
+        turned = travel = steps = 0;
+    } else if (!given_up) {
+        const int32_t d = mp_rot_delta(last_dx, last_dy, dx, dy);
+        travel += abs(cx - last_cx) + abs(cy - last_cy);
+        if (!engaged) {
+            turned += d;
+            // How far the turn moved the fingers (arc length) against how
+            // far their middle moved.
+            const int32_t span = abs(dx) + abs(dy);
+            const int32_t arc  = abs(turned) * span / 917;
+            if (abs(turned) >= MP_ROT_START && arc > travel) {
+                engaged = true;
+                steps   = turned;
+            } else if (travel > MP_EDGE_SCALE / 6) {
+                given_up = true; // a scroll or a pinch
+            }
+        } else {
+            steps += d;
+        }
+        if (engaged) {
+            const int32_t step = (int32_t)mp_rot_step_now() * 16;
+            while (steps >= step) {
+                steps -= step;
+                mp_rot_emit(1);
+            }
+            while (steps <= -step) {
+                steps += step;
+                mp_rot_emit(0);
+            }
+        }
+    }
+    last_dx = dx;
+    last_dy = dy;
+    last_cx = cx;
+    last_cy = cy;
+    if (engaged) {
+        state->contacts[found[0]].tip = 0;
+        state->contacts[found[1]].tip = 0;
+    }
+}
+
 bool matrix_pointing_digitizer(digitizer_t *const state) {
     if (!mp_edge_on_this_side()) return false;
     mp_ensure_loaded();
@@ -1785,6 +1922,7 @@ bool matrix_pointing_digitizer(digitizer_t *const state) {
             c->tip = 0; // hidden from the cursor and tap detection
         }
     }
+    mp_rot_update(state, fingers);
     // Movement of the fingers the host sees.
     for (uint8_t i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
         const digitizer_contact_t *c = &state->contacts[i];
@@ -2456,7 +2594,13 @@ static void mp_sync_config_slave(uint8_t in_len, const void *in, uint8_t out_len
 #    endif
     if (in_len >= MP_SYNC_SIZE_R17) {
         const uint8_t *extra = (const uint8_t *)in + sizeof(mp_config_t);
-        if (extra[7] == 1) mp_sensor_request(extra[4], extra[5], extra[6]);
+        // extra[7]: bit 0 = the sensor values are set; bits 1-7 (revision
+        // 33): degrees per two-finger rotation step, 0 = rotation off.
+        if (extra[7] & 1) mp_sensor_request(extra[4], extra[5], extra[6]);
+#    ifdef MP_EDGES
+        mp_rot_synced[0] = (extra[7] >> 1) != 0;
+        if (extra[7] >> 1) mp_rot_synced[1] = extra[7] >> 1;
+#    endif
 #    ifdef MP_EDGES
         if (extra[8] >= 10 && extra[8] <= 100) mp_precision_remote = extra[8];
 #    endif
@@ -2489,6 +2633,7 @@ static void mp_sync_config_slave(uint8_t in_len, const void *in, uint8_t out_len
 #    define MP_PEER_REPLY_BASE 12 // up to the finger count (revisions 12-17)
 #    define MP_PEER_REPLY_SIZE 17 // + touch glow [active, u, v] (revision 18)
 #    define MP_PEER_REPLY_MOTION (MP_PEER_REPLY_SIZE + 12) // + touchpad movement (revision 29)
+#    define MP_PEER_REPLY_ROT (MP_PEER_REPLY_MOTION + 1)   // + rotation steps (revision 33)
 // Request (revision 18): the master's touch glow [active, u, v] when the
 // touchpad is on the master half.
 static void mp_sync_swipe_slave(uint8_t in_len, const void *in, uint8_t out_len, void *out) {
@@ -2545,6 +2690,14 @@ static void mp_sync_swipe_slave(uint8_t in_len, const void *in, uint8_t out_len,
 #    endif
     }
     if (out_len >= MP_PEER_REPLY_MOTION) mp_motion_pack(o + MP_PEER_REPLY_SIZE);
+    if (out_len >= MP_PEER_REPLY_ROT) {
+#    ifdef MP_EDGES
+        o[MP_PEER_REPLY_MOTION] = (uint8_t)mp_pending_rot;
+        mp_pending_rot          = 0;
+#    else
+        o[MP_PEER_REPLY_MOTION] = 0;
+#    endif
+    }
 }
 
 static uint8_t  mp_peer_state    = 0; // see MP_SPLIT_INFO_VALUE_ID
@@ -2575,7 +2728,7 @@ static void mp_split_housekeeping(void) {
         payload[sizeof(mp_config_t) + 4] = mp_ext.touch_threshold;
         payload[sizeof(mp_config_t) + 5] = mp_ext.hyst_initial;
         payload[sizeof(mp_config_t) + 6] = mp_ext.hyst_next;
-        payload[sizeof(mp_config_t) + 7] = 1;
+        payload[sizeof(mp_config_t) + 7] = 1 | ((mp_rot_kc(0) || mp_rot_kc(1)) ? (uint8_t)(mp_rot_step() << 1) : 0);
 #    ifdef MP_EDGES
         payload[sizeof(mp_config_t) + 8]  = mp_precision_wanted();
         payload[sizeof(mp_config_t) + 9]  = mp_ext.touch_glow;
@@ -2601,8 +2754,8 @@ static void mp_split_housekeeping(void) {
     static uint16_t last_poll = 0;
     if (mp_motion_active() || timer_elapsed(last_poll) >= 20) {
         last_poll = timer_read();
-        _Static_assert(MP_PEER_REPLY_MOTION <= RPC_S2M_BUFFER_SIZE, "Set RPC_S2M_BUFFER_SIZE to at least 29");
-        uint8_t reply[MP_PEER_REPLY_MOTION] = {0};
+        _Static_assert(MP_PEER_REPLY_ROT <= RPC_S2M_BUFFER_SIZE, "Set RPC_S2M_BUFFER_SIZE to at least 30");
+        uint8_t reply[MP_PEER_REPLY_ROT] = {0};
         // This half's touch glow (5 bytes), then (revision 20) the key guide.
 #    ifdef MP_GUIDE
         _Static_assert(5 + MP_GUIDE_PACKET <= RPC_M2S_BUFFER_SIZE, "key guide does not fit the split request");
@@ -2653,6 +2806,8 @@ static void mp_split_housekeeping(void) {
                 }
                 if (reply[11]) mp_fingers_remote = reply[11] - 1;
                 if (!mp_edge_on_this_side()) mp_glow_unpack(reply + 12);
+                // Two-finger rotation steps (revision 33).
+                for (int8_t n = (int8_t)reply[MP_PEER_REPLY_MOTION]; n != 0; n += n > 0 ? -1 : 1) mp_rot_emit(n > 0);
 #    endif
                 // The reply took about half of the exchange to arrive.
                 if (mp_peer_build == mp_build_id()) mp_motion_unpack(reply + MP_PEER_REPLY_SIZE, timer_elapsed(started) / 2);

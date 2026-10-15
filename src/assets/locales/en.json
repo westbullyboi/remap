@@ -1069,5 +1069,14 @@
   "Turn a knob: the LEDs show a bar for a moment": "Turn a knob: the LEDs show a bar for a moment",
   "Hold a knob down: the hold key is sent": "Hold a knob down: the hold key is sent",
   "Push a knob twice quickly: the double press key is sent": "Push a knob twice quickly: the double press key is sent",
-  "No acceleration": "No acceleration"
+  "No acceleration": "No acceleration",
+  "Turn two fingers": "Turn two fingers",
+  "Put two fingers on the touchpad and turn them like a knob. It starts after about 15 degrees of turning; moving both fingers the same way stays a scroll.": "Put two fingers on the touchpad and turn them like a knob. It starts after about 15 degrees of turning; moving both fingers the same way stays a scroll.",
+  "Action": "Action",
+  "\"None\" turns the gesture off.": "\"None\" turns the gesture off.",
+  "Turn per step": "Turn per step",
+  "How far to turn for one key (smaller = more steps).": "How far to turn for one key (smaller = more steps).",
+  "On, a key every {{step}} degrees": "On, a key every {{step}} degrees",
+  "Turn two fingers on the touchpad: the volume (or the set key) changes; scrolling with two fingers still scrolls": "Turn two fingers on the touchpad: the volume (or the set key) changes; scrolling with two fingers still scrolls",
+  "Gesture off": "Gesture off"
 }
