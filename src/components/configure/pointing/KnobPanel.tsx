@@ -19,7 +19,10 @@ import {
 } from './EdgeKnobShared';
 import { edgeKnobPreview } from '../../../services/pointing/EdgeKnobPreview';
 import { KnobExtraRows, KnobOptionsCard, useKnobExtras } from './KnobExtras';
-import { KNOB_MODES } from '../../../services/pointing/KnobExtras';
+import {
+  KNOB_MODES,
+  KNOB_REVISION,
+} from '../../../services/pointing/KnobExtras';
 
 // Knobs tab: what turning does, without and while pushing the knob.
 export function KnobPanel(props: { keyboard: IKeyboard | null }) {
@@ -45,26 +48,30 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
   // The knob actions (firmware r32+), listed with the key patterns.
   const actionProps = (k: number, pushed: number) => {
     const e = extras.extras;
-    if (!e) return {};
-    const current = modeOf(k, pushed);
+    const current = e ? modeOf(k, pushed) : 0;
     return {
+      // Listed even when the firmware is older (disabled, with the
+      // revision they need), so they can be found.
       actions: KNOB_MODES.filter((m) => m.value !== 0).map((m) => {
-        const tooOld =
-          (m.revision ?? 0) > extras.revision && m.value !== current;
+        const needs = m.revision ?? KNOB_REVISION;
+        const tooOld = !e || (needs > extras.revision && m.value !== current);
         return {
           value: String(m.value),
           label:
             t(m.label) +
             (tooOld
-              ? ` — ${t('needs firmware r{{revision}}', {
-                  revision: m.revision,
-                })}`
+              ? ` — ${
+                  extras.supported === null
+                    ? t('Reading from the keyboard...')
+                    : t('needs firmware r{{revision}}', { revision: needs })
+                }`
               : ''),
           disabled: tooOld,
         };
       }),
       action: current ? String(current) : null,
       onAction: (value: string) => {
+        if (!e) return;
         const modes = e.modes.map((m) => m.slice());
         modes[k][pushed] = Number(value);
         extras.change({ ...e, modes });
