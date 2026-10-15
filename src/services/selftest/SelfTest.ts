@@ -352,6 +352,25 @@ export async function runFirmwareChecks(
     });
   }
 
+  // r35: circular scrolling.
+  const circ = await read(0xd0, 1);
+  if (typeof circ === 'string') {
+    checks.push(failed('circular', 'Circular scrolling', 35, circ));
+  } else {
+    const mode = await read(0x0b, 1);
+    const on = typeof mode !== 'string' && mode.value === 1;
+    checks.push({
+      id: 'circular',
+      label: 'Circular scrolling',
+      revision: 35,
+      status: 'ok',
+      detail: on
+        ? 'On, a notch every {{step}} degrees'
+        : 'Off (Scroll method: Circular turns it on)',
+      values: { step: circ.value },
+    });
+  }
+
   return report;
 }
 

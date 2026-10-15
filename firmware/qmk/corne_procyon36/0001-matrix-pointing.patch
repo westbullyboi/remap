@@ -1,4 +1,4 @@
-From c34b349decf15f90c2dbd5634cc536a268421f3c Mon Sep 17 00:00:00 2001
+From ecf2abd489d80ccc3e3752bdf6e5e868a2cff416 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 14:40:51 +0000
 Subject: [PATCH] Add Matrix editor support and fix the build on the multitouch
@@ -46,10 +46,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  keyboards/corne_procyon36/digitizer_user.c    |   99 +-
  keyboards/corne_procyon36/keyboard.json       |    2 +-
  .../corne_procyon36/keymaps/default/keymap.c  |   26 +-
- keyboards/corne_procyon36/matrix_pointing.c   | 4292 +++++++++++++++++
+ keyboards/corne_procyon36/matrix_pointing.c   | 4435 +++++++++++++++++
  keyboards/corne_procyon36/matrix_pointing.h   |   94 +
  keyboards/corne_procyon36/rules.mk            |   12 +-
- 7 files changed, 4521 insertions(+), 100 deletions(-)
+ 7 files changed, 4664 insertions(+), 100 deletions(-)
  create mode 100644 keyboards/corne_procyon36/matrix_pointing.c
  create mode 100644 keyboards/corne_procyon36/matrix_pointing.h
 
@@ -371,10 +371,10 @@ index 2784405..a661c11 100644
  }
 diff --git a/keyboards/corne_procyon36/matrix_pointing.c b/keyboards/corne_procyon36/matrix_pointing.c
 new file mode 100644
-index 0000000..e6f8490
+index 0000000..b742177
 --- /dev/null
 +++ b/keyboards/corne_procyon36/matrix_pointing.c
-@@ -0,0 +1,4292 @@
+@@ -0,0 +1,4435 @@
 +// Matrix pointing settings for QMK (touchpad + auto mouse layer).
 +// See matrix_pointing.h and README.md next to this file.
 +//
@@ -433,7 +433,7 @@ index 0000000..e6f8490
 +// Read-only value 0x7C: revision of this module, so the editor can tell that
 +// the keyboard runs an older build. Bump it with every behaviour change.
 +#define MP_REVISION_VALUE_ID 0x7C
-+#define MP_REVISION 34
++#define MP_REVISION 35
 +// Read-only value 0x7D: the other half of a split keyboard —
 +// [state, its revision (2), this build's ID (2), its build ID (2)];
 +// state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -1107,13 +1107,18 @@ index 0000000..e6f8490
 +    // version 3 (revision 33): two-finger rotation
 +    uint16_t rot_kc[2]; // [counter-clockwise, clockwise], 0 = off
 +    uint8_t  rot_step;  // degrees per keycode
++    // version 4 (revision 35): circular scrolling (on: mp_config.scroll_mode 1)
++    uint16_t circ_kc[2]; // [counter-clockwise, clockwise]
++    uint8_t  circ_step;  // degrees per keycode
 +} mp_keys_t;
-+#    define MP_KEYS_VERSION 3
++#    define MP_KEYS_VERSION 4
 +#    define MP_KEYS_V1_SIZE 28
 +#    define MP_KEYS_V2_SIZE (MP_KEYS_V1_SIZE + sizeof(mp_knob_cfg_t))
++#    define MP_KEYS_V3_SIZE (MP_KEYS_V2_SIZE + 5)
 +_Static_assert(sizeof(mp_keys_t) <= 64, "mp_keys_t must fit 64 bytes");
 +_Static_assert(offsetof(mp_keys_t, knob) == MP_KEYS_V1_SIZE, "key block version 1 layout changed");
 +_Static_assert(offsetof(mp_keys_t, rot_kc) == MP_KEYS_V2_SIZE, "key block version 2 layout changed");
++_Static_assert(offsetof(mp_keys_t, circ_kc) == MP_KEYS_V3_SIZE, "key block version 3 layout changed");
 +
 +static const mp_keys_t mp_keys_defaults = {
 +    .magic   = MP_KEY_MAGIC,
@@ -1121,6 +1126,8 @@ index 0000000..e6f8490
 +    .knob    = MP_KNOB_CFG_DEFAULTS,
 +    .rot_kc   = {KC_AUDIO_VOL_DOWN, KC_AUDIO_VOL_UP},
 +    .rot_step = 15,
++    .circ_kc   = {QK_MOUSE_WHEEL_UP, QK_MOUSE_WHEEL_DOWN},
++    .circ_step = 15,
 +    .window_kc =
 +        {
 +            {LGUI(KC_LEFT), LCTL(LALT(KC_LEFT))},                // left half
@@ -1146,7 +1153,7 @@ index 0000000..e6f8490
 +    eeprom_read_block(&mp_keys, (void *)(uintptr_t)MP_KEY_EEPROM_ADDR, sizeof(mp_keys));
 +    // Older versions (1: revision 31, 2: 32): keep what they had, the new
 +    // settings start at their defaults (written with the next save).
-+    static const uint8_t old_sizes[] = {0, MP_KEYS_V1_SIZE, MP_KEYS_V2_SIZE};
++    static const uint8_t old_sizes[] = {0, MP_KEYS_V1_SIZE, MP_KEYS_V2_SIZE, MP_KEYS_V3_SIZE};
 +    if (mp_keys.magic == MP_KEY_MAGIC && mp_keys.version >= 1 && mp_keys.version < MP_KEYS_VERSION && mp_keys.checksum == mp_keys_checksum_n(&mp_keys, old_sizes[mp_keys.version])) {
 +        mp_keys_t migrated = mp_keys_defaults;
 +        memcpy((uint8_t *)&migrated + 4, (const uint8_t *)&mp_keys + 4, old_sizes[mp_keys.version] - 4);
@@ -1189,8 +1196,11 @@ index 0000000..e6f8490
 +//   0xCA window switching end (x10 ms)
 +//   0xCB / 0xCC  two-finger rotation (revision 33): keycode counter-clockwise
 +//                / clockwise (2 bytes, 0 = off); 0xCD degrees per keycode
++//   0xCE / 0xCF  circular scrolling (revision 35): keycode counter-clockwise
++//                / clockwise (2 bytes); 0xD0 degrees per keycode. On / off
++//                is 0x0B (scroll_mode 1), which the split sync carries.
 +#    define MP_KNOB_VALUE_FIRST 0xBC
-+#    define MP_KNOB_VALUE_LAST 0xCD
++#    define MP_KNOB_VALUE_LAST 0xD0
 +static uint8_t *mp_knob_value_ptr(uint8_t id, uint8_t *size, uint8_t *lo, uint8_t *hi) {
 +    mp_knob_cfg_t *c = &mp_keys.knob;
 +    *size            = 1;
@@ -1232,6 +1242,13 @@ index 0000000..e6f8490
 +        case 0xCD:
 +            *lo = 5, *hi = 45;
 +            return &mp_keys.rot_step;
++        case 0xCE:
++        case 0xCF:
++            *size = 2;
++            return (uint8_t *)&mp_keys.circ_kc[id - 0xCE];
++        case 0xD0:
++            *lo = 5, *hi = 45;
++            return &mp_keys.circ_step;
 +    }
 +    return NULL;
 +}
@@ -1283,11 +1300,23 @@ index 0000000..e6f8490
 +__attribute__((unused)) static uint8_t mp_rot_step(void) {
 +    return mp_keys.rot_step;
 +}
++__attribute__((unused)) static uint16_t mp_circ_kc(uint8_t dir) {
++    return mp_keys.circ_kc[dir];
++}
++__attribute__((unused)) static uint8_t mp_circ_step(void) {
++    return mp_keys.circ_step;
++}
 +#else
 +__attribute__((unused)) static uint16_t mp_rot_kc(uint8_t dir) {
 +    return KC_NO;
 +}
 +__attribute__((unused)) static uint8_t mp_rot_step(void) {
++    return 15;
++}
++__attribute__((unused)) static uint16_t mp_circ_kc(uint8_t dir) {
++    return dir ? QK_MOUSE_WHEEL_DOWN : QK_MOUSE_WHEEL_UP;
++}
++__attribute__((unused)) static uint8_t mp_circ_step(void) {
 +    return 15;
 +}
 +static mp_knob_cfg_t mp_knob_cfg_fixed __attribute__((unused)) = MP_KNOB_CFG_DEFAULTS;
@@ -1413,6 +1442,9 @@ index 0000000..e6f8490
 +#endif
 +#ifdef POINTING_DEVICE_DRIVER_digitizer
 +    caps |= MP_CAP(0x08) | MP_CAP(0x09); // filtered in matrix_pointing_task()
++#    ifdef MP_EDGES
++    caps |= MP_CAP(0x0B); // circular scrolling (revision 35, scroll_mode 1)
++#    endif
 +#    ifdef DIGITIZER_MOUSE_TAP_DETECTION_TIMEOUT
 +    caps |= MP_CAP(0x07) | MP_CAP(0x0A); // through matrix_pointing_tap_term()
 +#    endif
@@ -2171,6 +2203,105 @@ index 0000000..e6f8490
 +    return (int32_t)d;
 +}
 +
++// Circular scrolling (revision 35, on with scroll_mode 1): one finger put
++// down near the rim of the pad (within the edge width; edges with a slider
++// keep the slider) and moved around the pad's middle scrolls, a notch every
++// circ_step degrees (clockwise = down by default), for as long as it keeps
++// going round. It starts after 20 degrees when the finger went round more
++// than it went in or out; the finger is then hidden from the cursor until
++// it lifts. The touchpad half counts 5-degree units; the USB half turns
++// them into keycodes (see mp_circ_units()).
++#    define MP_CIRC_UNIT (5 * 16)   // degrees x 16 sent between the halves
++#    define MP_CIRC_START (20 * 16) // degrees x 16
++static volatile int8_t mp_pending_circ = 0; // units, on the touchpad half without USB
++
++static void mp_circ_units(int8_t units) {
++    static int32_t  acc  = 0;
++    static uint16_t last = 0;
++    // A new turn (nothing for a moment): the rest of the last one is dropped.
++    if (timer_elapsed(last) > 400) acc = 0;
++    last = timer_read();
++    acc += units * (MP_CIRC_UNIT / 16);
++    uint8_t step = mp_circ_step();
++    if (step < 5) step = 5;
++    while (acc >= step) {
++        acc -= step;
++        mp_send_keycode(mp_circ_kc(1));
++    }
++    while (acc <= -(int32_t)step) {
++        acc += step;
++        mp_send_keycode(mp_circ_kc(0));
++    }
++}
++
++static void mp_circ_emit(int8_t units) {
++    if (!mp_edge_is_master()) {
++        const int16_t n = mp_pending_circ + units;
++        mp_pending_circ = n > 100 ? 100 : n < -100 ? -100 : n;
++        return;
++    }
++    mp_circ_units(units);
++}
++
++static void mp_circ_update(digitizer_t *const state, uint8_t fingers) {
++    static bool    tracking = false, engaged = false, given_up = false;
++    static uint8_t index = 0;
++    static int16_t last_x = 0, last_y = 0;
++    static int32_t turned = 0, radial = 0, units = 0;
++    if (fingers != 1 || mp_config.scroll_mode != 1) {
++        tracking = false;
++        return;
++    }
++    int8_t found = -1;
++    for (uint8_t i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
++        if (state->contacts[i].type == FINGER && state->contacts[i].tip) {
++            found = i;
++            break;
++        }
++    }
++    if (found < 0) return; // an edge slider or a corner tap
++    int16_t u, v;
++    mp_edge_position(&state->contacts[found], &u, &v);
++    const int16_t x = u - MP_EDGE_SCALE / 2, y = v - MP_EDGE_SCALE / 2;
++    // Distance from the middle, square like the pad (0 middle, 500 rim).
++    const int16_t r = abs(x) > abs(y) ? abs(x) : abs(y);
++    if (!tracking || index != found) {
++        tracking = true;
++        index    = found;
++        engaged  = false;
++        // Only a touch that starts near the rim.
++        const int16_t band = (int16_t)mp_edge_width_now() * (MP_EDGE_SCALE / 100);
++        given_up = r < MP_EDGE_SCALE / 2 - band;
++        turned = radial = units = 0;
++    } else if (!given_up) {
++        const int32_t d = mp_rot_delta(last_x, last_y, x, y);
++        const int16_t last_r = abs(last_x) > abs(last_y) ? abs(last_x) : abs(last_y);
++        if (!engaged) {
++            turned += d;
++            radial += abs(r - last_r);
++            const int32_t arc = abs(turned) * r / 917; // around the middle
++            if (abs(turned) >= MP_CIRC_START && arc > radial * 2) {
++                engaged = true;
++                units   = turned;
++            } else if (radial > MP_EDGE_SCALE / 5) {
++                given_up = true; // going in: the cursor
++            }
++        } else {
++            units += d;
++        }
++        if (engaged) {
++            const int32_t n = units / MP_CIRC_UNIT;
++            if (n) {
++                units -= n * MP_CIRC_UNIT;
++                mp_circ_emit((int8_t)n);
++            }
++        }
++    }
++    last_x = x;
++    last_y = y;
++    if (engaged) state->contacts[found].tip = 0;
++}
++
 +static void mp_rot_update(digitizer_t *const state, uint8_t fingers) {
 +    static bool    tracking = false, engaged = false, given_up = false;
 +    static int16_t last_dx = 0, last_dy = 0, last_cx = 0, last_cy = 0;
@@ -2302,6 +2433,7 @@ index 0000000..e6f8490
 +        }
 +    }
 +    mp_rot_update(state, fingers);
++    mp_circ_update(state, fingers);
 +    // Movement of the fingers the host sees.
 +    for (uint8_t i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
 +        const digitizer_contact_t *c = &state->contacts[i];
@@ -3020,6 +3152,7 @@ index 0000000..e6f8490
 +#    define MP_PEER_REPLY_SIZE 17 // + touch glow [active, u, v] (revision 18)
 +#    define MP_PEER_REPLY_MOTION (MP_PEER_REPLY_SIZE + 12) // + touchpad movement (revision 29)
 +#    define MP_PEER_REPLY_ROT (MP_PEER_REPLY_MOTION + 1)   // + rotation steps (revision 33)
++#    define MP_PEER_REPLY_CIRC (MP_PEER_REPLY_ROT + 1)    // + circular scrolling units (revision 35)
 +// Request (revision 18): the master's touch glow [active, u, v] when the
 +// touchpad is on the master half.
 +static void mp_sync_swipe_slave(uint8_t in_len, const void *in, uint8_t out_len, void *out) {
@@ -3084,6 +3217,14 @@ index 0000000..e6f8490
 +        o[MP_PEER_REPLY_MOTION] = 0;
 +#    endif
 +    }
++    if (out_len >= MP_PEER_REPLY_CIRC) {
++#    ifdef MP_EDGES
++        o[MP_PEER_REPLY_ROT] = (uint8_t)mp_pending_circ;
++        mp_pending_circ      = 0;
++#    else
++        o[MP_PEER_REPLY_ROT] = 0;
++#    endif
++    }
 +}
 +
 +static uint8_t  mp_peer_state    = 0; // see MP_SPLIT_INFO_VALUE_ID
@@ -3140,8 +3281,8 @@ index 0000000..e6f8490
 +    static uint16_t last_poll = 0;
 +    if (mp_motion_active() || timer_elapsed(last_poll) >= 20) {
 +        last_poll = timer_read();
-+        _Static_assert(MP_PEER_REPLY_ROT <= RPC_S2M_BUFFER_SIZE, "Set RPC_S2M_BUFFER_SIZE to at least 30");
-+        uint8_t reply[MP_PEER_REPLY_ROT] = {0};
++        _Static_assert(MP_PEER_REPLY_CIRC <= RPC_S2M_BUFFER_SIZE, "Set RPC_S2M_BUFFER_SIZE to at least 31");
++        uint8_t reply[MP_PEER_REPLY_CIRC] = {0};
 +        // This half's touch glow (5 bytes), then (revision 20) the key guide.
 +#    ifdef MP_GUIDE
 +        _Static_assert(5 + MP_GUIDE_PACKET <= RPC_M2S_BUFFER_SIZE, "key guide does not fit the split request");
@@ -3194,6 +3335,8 @@ index 0000000..e6f8490
 +                if (!mp_edge_on_this_side()) mp_glow_unpack(reply + 12);
 +                // Two-finger rotation steps (revision 33).
 +                for (int8_t n = (int8_t)reply[MP_PEER_REPLY_MOTION]; n != 0; n += n > 0 ? -1 : 1) mp_rot_emit(n > 0);
++                // Circular scrolling units (revision 35).
++                if (reply[MP_PEER_REPLY_ROT]) mp_circ_units((int8_t)reply[MP_PEER_REPLY_ROT]);
 +#    endif
 +                // The reply took about half of the exchange to arrive.
 +                if (mp_peer_build == mp_build_id()) mp_motion_unpack(reply + MP_PEER_REPLY_SIZE, timer_elapsed(started) / 2);

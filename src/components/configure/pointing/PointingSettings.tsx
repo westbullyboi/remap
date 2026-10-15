@@ -28,7 +28,7 @@ import { firmwareFlasherStore } from '../firmware/firmwareFlasherStore';
 import RgbMatrixCard from '../lighting/RgbMatrixCard';
 import { EdgeZonesCard } from './EdgeZonesCard';
 import { TouchpadModesCard } from './TouchpadModesCard';
-import { RotationCard } from './RotationCard';
+import { CircularScrollCard, RotationCard } from './RotationCard';
 import MotionStatsLine from '../split/MotionStatsLine';
 import { KeyGuideCard } from './KeyGuideCard';
 import { SensitivityCard } from './SensitivityCard';
@@ -391,6 +391,9 @@ export default function PointingSettings(props: PointingSettingsProps) {
           )}
           {props.mode === 'touchpad' && live && props.keyboard && (
             <RotationCard keyboard={props.keyboard} />
+          )}
+          {props.mode === 'touchpad' && live && props.keyboard && (
+            <CircularScrollCard keyboard={props.keyboard} />
           )}
           {props.mode === 'leds' && live && props.keyboard && (
             <RgbMatrixCard

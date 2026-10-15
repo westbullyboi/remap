@@ -183,6 +183,10 @@ export default function SelfTestPanel() {
       'Knob set to switch virtual desktops: turning moves to the next / previous desktop',
     ]);
     knobItems.push([
+      'circular',
+      'Scroll method Circular: one finger from the rim, round the middle, scrolls (clockwise = down)',
+    ]);
+    knobItems.push([
       'rotation',
       'Turn two fingers on the touchpad: the volume (or the set key) changes; scrolling with two fingers still scrolls',
     ]);
@@ -190,7 +194,13 @@ export default function SelfTestPanel() {
       list.push({
         id,
         group:
-          id === 'rotation' ? 'r33' : id === 'knobDesktops' ? 'r34' : 'r32',
+          id === 'rotation'
+            ? 'r33'
+            : id === 'knobDesktops'
+              ? 'r34'
+              : id === 'circular'
+                ? 'r35'
+                : 'r32',
         label: tr(text),
       })
     );

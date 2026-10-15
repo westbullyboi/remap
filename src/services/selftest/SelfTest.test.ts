@@ -29,8 +29,8 @@ describe('SelfTest', () => {
   test('latest firmware: every check read', async () => {
     const values: { [id: number]: number[] } = {
       0x00: [0x4d, 0x58],
-      0x7c: [0, 34],
-      0x7d: [1, 0, 34, 0x12, 0x34, 0x12, 0x34],
+      0x7c: [0, 35],
+      0x7d: [1, 0, 35, 0x12, 0x34, 0x12, 0x34],
       0xbc: [1],
       0xbd: [2],
       0xbe: [0],
@@ -40,6 +40,7 @@ describe('SelfTest', () => {
       0xcb: [0x00, 0xaa],
       0xcc: [0x00, 0xa9],
       0xcd: [15],
+      0xd0: [15],
       0xa1: [1],
       0xa4: [3],
       0xa5: [1],
@@ -52,7 +53,7 @@ describe('SelfTest', () => {
     };
     for (let k = 0; k < 12; k++) values[0xb0 + k] = [0x08, 0x50];
     const r = await runFirmwareChecks(fakeKeyboard(values));
-    expect(r.revision).toBe(34);
+    expect(r.revision).toBe(35);
     expect(r.detectedOs).toBe(3);
     expect(r.touchpadModes).toEqual([1, 3, 4]);
     expect(r.windowKeys![0]).toEqual([0x850, 0x850]);
@@ -66,6 +67,7 @@ describe('SelfTest', () => {
       ['windowKeys', 'ok'],
       ['knobs', 'ok'],
       ['rotation', 'ok'],
+      ['circular', 'ok'],
     ]);
   });
 
@@ -88,6 +90,7 @@ describe('SelfTest', () => {
     expect(status.windowKeys).toBe('old');
     expect(status.knobs).toBe('old');
     expect(status.rotation).toBe('old');
+    expect(status.circular).toBe('old');
     expect(status.motion).toBe('ok');
     expect(r.windowKeys).toBe(null);
   });

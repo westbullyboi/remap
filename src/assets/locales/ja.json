@@ -368,7 +368,7 @@
   "Adjust when touches are missed or misdetected": "誤反応が多い・反応が鈍いときに調整",
   "Auto mouse layer": "オートマウスレイヤー",
   "Back to the previous layer": "元のレイヤーへ",
-  "Circular": "サークル",
+  "Circular": "円を描く",
   "Click assignments": "クリック操作の割り当て",
   "Click keys become available": "クリック等のキーが使える",
   "Cursor speed and movement": "カーソルの速さと動き方",
@@ -1181,5 +1181,11 @@
   "Not used now: \"{{setting}}\" is set to \"{{mode}}\", which takes over.": "今は使われていません：「{{setting}}」が「{{mode}}」になっているため、そちらが優先されます。",
   "Use these keys": "このキーを使う",
   "Knob actions": "ノブの動作",
-  "Keys": "キー"
+  "Keys": "キー",
+  "Circular scrolling": "円を描くスクロール",
+  "Put one finger near the rim of the touchpad and move it round the middle, like a wheel: clockwise scrolls down. Turn it on with Scroll method \"Circular\" above. Starting on an edge that has an edge slider keeps the slider.": "タッチパッドの縁の近くに指を1本置き、中心のまわりを回るようになぞると、ホイールのようにスクロールします（右回りで下へ）。上の「スクロール方式」で「円を描く」を選ぶとオンになります。縁スライダーを設定している辺から始めた場合は、縁スライダーが優先されます。",
+  "What going round sends (scrolling by default).": "回したときに送るキーです（初期値はスクロール）。",
+  "On, a notch every {{step}} degrees": "オン、{{step}}° ごとに1段",
+  "Off (Scroll method: Circular turns it on)": "オフ（「スクロール方式」を「円を描く」にするとオン）",
+  "Scroll method Circular: one finger from the rim, round the middle, scrolls (clockwise = down)": "スクロール方式「円を描く」：縁から指1本で中心のまわりをなぞるとスクロールする（右回り＝下）"
 }
