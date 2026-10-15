@@ -21,6 +21,8 @@ import { KnobPanel } from '../pointing/KnobPanel';
 import Combos from '../combos/Combos';
 import EditorSidebar from '../sidebar/EditorSidebar.container';
 import MacroEditor from '../macroeditor/MacroEditor.container';
+import Keycodes from '../keycodes/Keycodes.container';
+import { MacroKey, MacroTap } from '../../../services/macro/Macro';
 import OsProfileBar from './OsProfileBar';
 import { WindowKeysCard } from './WindowKeysCard';
 import { useOsEdit } from '../../../services/pointing/OsProfiles';
@@ -116,6 +118,9 @@ export default function ViewWindow(props: { view: ConfigureView }) {
 function MacroWindowBody() {
   const dispatch = useDispatch();
   const macroKey = useSelector((s: RootState) => s.configure.macroEditor.key);
+  const macroKeys = useSelector(
+    (s: RootState) => s.configure.macroEditor.macroKeys
+  );
   const maxCount = useSelector(
     (s: RootState) => s.entities.device.macro.maxCount
   );
@@ -126,7 +131,30 @@ function MacroWindowBody() {
   );
   useEffect(() => () => void dispatch(MacroEditorActions.clearMacroKey()), []);
 
-  if (macroKey) return <MacroEditor />;
+  if (macroKey) {
+    // The keycode palette under the editor: click a key to add it (keys the
+    // OS takes before the browser, like Win + E, can be added from here).
+    return (
+      <div className="mx-macro-edit">
+        <p className="mx-sub" style={{ margin: '0 0 14px', lineHeight: 1.5 }}>
+          {t(
+            'Click the box and press keys to record them (Win / Ctrl / Alt + a key is recorded held together). Keys the OS takes first (such as Win + E): click them in the list below.'
+          )}
+        </p>
+        <MacroEditor />
+        <div style={{ height: 12 }} />
+        <Keycodes
+          onPickKey={(picked) => {
+            const keys: MacroKey[] = [
+              ...macroKeys,
+              { keyDelayPair: { key: picked, delay: 0 }, type: MacroTap },
+            ];
+            dispatch(MacroActionsThunk.updateMacroKeys(keys));
+          }}
+        />
+      </div>
+    );
+  }
   const windowKeys = <WindowKeysCard keyboard={keyboard} />;
   if (!maxCount) {
     return (

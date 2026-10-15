@@ -2136,3 +2136,15 @@ button:disabled {
     width: 100%;
   }
 }
+
+// Macro editor inside the Macros window: its own size, not the classic
+// layout's keyboard height.
+.mx-macro-edit {
+  .macro-editor-wrapper {
+    height: auto !important;
+    align-items: flex-start;
+  }
+  .macro-editor-content {
+    width: 100%;
+  }
+}

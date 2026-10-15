@@ -5,7 +5,12 @@ import {
   MacroEditorStateType,
 } from './MacroEditor.container';
 import { Button } from '@mui/material';
-import { genKey } from '../keycodekey/KeyGen';
+import {
+  hidUsageOf,
+  isModifierUsage,
+} from '../../../services/macro/KeyEventCodes';
+import { KeycodeList } from '../../../services/hid/KeycodeList';
+import { genKey, Key } from '../keycodekey/KeyGen';
 import {
   Hold,
   MacroHold,
@@ -348,17 +353,62 @@ export default class MacroEditor extends React.Component<
     this.props.updateMacroKeys!(newKeys);
   }
 
+  // Modifiers held down while recording (HID usages), and whether another
+  // key was pressed with them.
+  private heldMods: number[] = [];
+  private modsUsed = false;
+
+  private keyOfUsage(usage: number): Key {
+    const keymap = KeycodeList.getKeymap(
+      usage,
+      this.props.labelLang!,
+      undefined
+    );
+    return genKey(keymap, this.props.labelLang!);
+  }
+
+  // Win / Ctrl / Alt + a key, or a key that types no character (Enter,
+  // arrows, F keys, ...): recorded from KeyboardEvent.code. A modifier with
+  // other keys becomes a "hold" (the modifier is held while they are typed).
   onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     const key = e.key;
+    if (e.repeat) return;
     if (key.toLowerCase() === 'v' && (e.ctrlKey || e.metaKey)) {
       // ignore paste shortcut
       return;
-    } else if (key === 'Backspace') {
-      this.popKey();
-      return;
-    } else if (key.length != 1) {
+    }
+    const usage = hidUsageOf(e.code);
+    if (usage !== null && isModifierUsage(usage)) {
+      e.preventDefault();
+      if (!this.heldMods.includes(usage)) this.heldMods.push(usage);
       return;
     }
+    const withMods = this.heldMods.some((m) => m !== 0xe1 && m !== 0xe5); // not only Shift
+    if (key === 'Backspace' && this.heldMods.length === 0) {
+      this.popKey();
+      return;
+    }
+    if (withMods || key.length != 1) {
+      if (usage === null) return;
+      e.preventDefault();
+      const end = this.props.macroKeys?.length ?? 0;
+      if (this.heldMods.length > 0) {
+        this.modsUsed = true;
+        const macroKeys: MacroKey[] = structuredClone(this.props.macroKeys!);
+        macroKeys.splice(end, 0, {
+          keyDelayPairs: [...this.heldMods, usage].map((u) => ({
+            key: this.keyOfUsage(u),
+            delay: 0,
+          })),
+          type: MacroHold,
+        });
+        this.props.updateMacroKeys!(macroKeys);
+      } else {
+        this.addKey(end, NaN, { key: this.keyOfUsage(usage), delay: 0 });
+      }
+      return;
+    }
+    if (this.heldMods.length > 0) this.modsUsed = true; // Shift + a character
 
     const keycodeCompositionFactory = new KeycodeCompositionFactory(
       key.charCodeAt(0),
@@ -372,6 +422,26 @@ export default class MacroEditor extends React.Component<
       const key = genKey(keymap, this.props.labelLang);
       this.addKey(this.props.macroKeys?.length ?? 0, NaN, { key, delay: 0 });
     }
+  }
+
+  // A modifier pressed and released on its own (e.g. Win to open the
+  // Start menu) is recorded as a tap of it.
+  onKeyUp(e: KeyboardEvent<HTMLDivElement>) {
+    const usage = hidUsageOf(e.code);
+    if (usage === null || !isModifierUsage(usage)) return;
+    e.preventDefault();
+    const alone =
+      !this.modsUsed &&
+      this.heldMods.length === 1 &&
+      this.heldMods[0] === usage;
+    this.heldMods = this.heldMods.filter((m) => m !== usage);
+    if (alone) {
+      this.addKey(this.props.macroKeys?.length ?? 0, NaN, {
+        key: this.keyOfUsage(usage),
+        delay: 0,
+      });
+    }
+    if (this.heldMods.length === 0) this.modsUsed = false;
   }
 
   onPaste(text: string) {
@@ -440,6 +510,13 @@ export default class MacroEditor extends React.Component<
               tabIndex={0}
               onKeyDown={(e) => {
                 this.onKeyDown(e);
+              }}
+              onKeyUp={(e) => {
+                this.onKeyUp(e);
+              }}
+              onBlur={() => {
+                this.heldMods = [];
+                this.modsUsed = false;
               }}
               onPaste={(e) => {
                 this.onPaste(e.clipboardData.getData('text/plain'));

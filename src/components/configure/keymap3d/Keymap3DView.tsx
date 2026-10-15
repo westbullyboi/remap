@@ -15,6 +15,10 @@ import { hexadecimal } from '../../../utils/StringUtils';
 import { Key, genKey } from '../keycodekey/KeyGen';
 import Keycodes from '../keycodes/Keycodes.container';
 import KeyInspector from '../inspector/KeyInspector.container';
+import CustomKey, {
+  CUSTOMKEY_POPOVER_WIDTH,
+  PopoverPosition,
+} from '../customkey/CustomKey';
 import { key3D, layout3D } from './Keyboard3DGeometry';
 import type { Keymap3DKey } from './Keymap3D';
 import { hidActionsThunk } from '../../../actions/hid.action';
@@ -302,6 +306,31 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
   };
 
   // A keycode picked in the palette is assigned to the selected key.
+  // Modifiers / hold (the classic layout's key popover): applied as it
+  // changes, the window stays open.
+  const [customAt, setCustomAt] = useState<PopoverPosition | null>(null);
+  const bleMicroPro = useSelector(
+    (s: RootState) => s.entities.device.bleMicroPro
+  );
+  const customKeycodes = useSelector(
+    (s: RootState) => s.entities.keyboardDefinition?.customKeycodes
+  );
+  const applyKey = (next: IKeymap) => {
+    if (!selectedPos) return;
+    const original = layerKeymaps[selectedPos];
+    if (!original) return;
+    if (sameKeymap(original, next)) {
+      dispatch(AppActions.remapsRemoveKey(layer, selectedPos));
+      dispatch(KeydiffActions.clearKeydiff());
+    } else {
+      dispatch(AppActions.remapsSetKey(layer, selectedPos, next));
+      dispatch(KeydiffActions.updateKeydiff(original, next));
+    }
+  };
+  useEffect(() => {
+    if (!open) setCustomAt(null);
+  }, [open, selectedPos]);
+
   const assign = (picked: Key) => {
     if (!selectedPos || closing) return;
     const original = layerKeymaps[selectedPos];
@@ -842,6 +871,44 @@ export default function Keymap3DView(props: Keymap3DViewProps) {
               </button>
             ))}
           </div>
+
+          {currentKey && (
+            <div className="mx-row mx-custom-row" style={{ flex: 'none' }}>
+              <span>
+                {t(
+                  'Win / Ctrl / Shift / Alt with this key, or another key on hold'
+                )}
+              </span>
+              <button
+                type="button"
+                className="mx-pill sm mx-press"
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setCustomAt({
+                    left: Math.max(8, r.right - CUSTOMKEY_POPOVER_WIDTH),
+                    top: r.bottom + 8,
+                    side: 'below',
+                  });
+                }}
+              >
+                {t('Modifiers / hold')}
+              </button>
+            </div>
+          )}
+          {customAt && currentKey && (
+            <CustomKey
+              id="mx-customkey-popover"
+              open
+              value={currentKey}
+              position={customAt}
+              layerCount={layerCount || 4}
+              labelLang={labelLang}
+              bleMicroPro={bleMicroPro}
+              onClose={() => setCustomAt(null)}
+              onChange={(k: Key) => applyKey(k.keymap)}
+              customKeycodes={customKeycodes}
+            />
+          )}
 
           <div key={tab} className="mx-wpane mx-anim-pane">
             {tab === 'keycode' ? (

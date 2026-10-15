@@ -1037,5 +1037,8 @@
   "Window keys need newer firmware (Matrix r{{revision}} or later).": "ウィンドウ配置キーには新しいファームウェア（Matrix r{{revision}} 以降）が必要です。",
   "Window keys": "ウィンドウ配置キー",
   "Key": "キー",
-  "Put Win ◧, Win ◨, Win ▣, Win _, Win ⇥ and Win ↺ (Key Config > Custom) on the keymap: they send the shortcut of the connected OS. On a Mac the defaults are those of the free app Rectangle (install it, or set your own shortcuts): the shortcuts built into macOS use the Fn / Globe key, which this keyboard cannot send.": "Win ◧・Win ◨・Win ▣・Win _・Win ⇥・Win ↺（キー設定 > カスタム）をキーマップに置くと、接続中の OS に合わせたショートカットを送ります。Mac の初期値は無料アプリ Rectangle のショートカットです（Rectangle を入れるか、独自のショートカットを選んでください）。macOS 標準の配置ショートカットは Fn（地球儀）キーを使うため、このキーボードからは送れません。"
+  "Put Win ◧, Win ◨, Win ▣, Win _, Win ⇥ and Win ↺ (Key Config > Custom) on the keymap: they send the shortcut of the connected OS. On a Mac the defaults are those of the free app Rectangle (install it, or set your own shortcuts): the shortcuts built into macOS use the Fn / Globe key, which this keyboard cannot send.": "Win ◧・Win ◨・Win ▣・Win _・Win ⇥・Win ↺（キー設定 > カスタム）をキーマップに置くと、接続中の OS に合わせたショートカットを送ります。Mac の初期値は無料アプリ Rectangle のショートカットです（Rectangle を入れるか、独自のショートカットを選んでください）。macOS 標準の配置ショートカットは Fn（地球儀）キーを使うため、このキーボードからは送れません。",
+  "Win / Ctrl / Shift / Alt with this key, or another key on hold": "このキーに Win / Ctrl / Shift / Alt を組み合わせる、または長押しで別のキーにする",
+  "Modifiers / hold": "修飾キー・長押し",
+  "Click the box and press keys to record them (Win / Ctrl / Alt + a key is recorded held together). Keys the OS takes first (such as Win + E): click them in the list below.": "枠をクリックしてキーを押すと記録されます（Win / Ctrl / Alt を押しながらのキーは「押したまま」の組み合わせで記録）。Win + E のように OS が先に使う組み合わせは、下の一覧からクリックで追加してください。"
 }
