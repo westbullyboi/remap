@@ -19,6 +19,7 @@ import {
 } from './EdgeKnobShared';
 import { edgeKnobPreview } from '../../../services/pointing/EdgeKnobPreview';
 import { KnobExtraRows, KnobOptionsCard, useKnobExtras } from './KnobExtras';
+import { KNOB_MODES } from '../../../services/pointing/KnobExtras';
 
 // Knobs tab: what turning does, without and while pushing the knob.
 export function KnobPanel(props: { keyboard: IKeyboard | null }) {
@@ -28,6 +29,43 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
   );
   const turn = useKnobTurn();
   const extras = useKnobExtras(props.keyboard);
+  // Turning (pushed = 0) or push and turn (1) of knob k sends other things
+  // than keys (switch windows, layers, desktops): the keys set here are not
+  // used then.
+  const modeOf = (k: number, pushed: number) =>
+    extras.extras?.modes[k]?.[pushed] ?? 0;
+  // Picking keys for turning means "send these keys": back to that mode.
+  const useKeys = (k: number, pushed: number) => {
+    const e = extras.extras;
+    if (!e || modeOf(k, pushed) === 0) return;
+    const modes = e.modes.map((m) => m.slice());
+    modes[k][pushed] = 0;
+    extras.change({ ...e, modes });
+  };
+  const notUsed = (k: number, pushed: number) => {
+    const mode = KNOB_MODES.find((m) => m.value === modeOf(k, pushed));
+    if (!mode || mode.value === 0) return null;
+    return (
+      <div className="knob-not-used" role="status">
+        <span>
+          {t(
+            'Not used now: "{{setting}}" is set to "{{mode}}", which takes over.',
+            {
+              setting: pushed ? t('Push and turn does') : t('Turning does'),
+              mode: t(mode.label),
+            }
+          )}
+        </span>
+        <button
+          type="button"
+          className="mx-btn mx-press"
+          onClick={() => useKeys(k, pushed)}
+        >
+          {t('Use these keys')}
+        </button>
+      </div>
+    );
+  };
   // A direction whose key is being picked from the keycode palette.
   const [picking, setPicking] = useState<{
     encoderId: number;
@@ -102,8 +140,12 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
                         keycodes={knob.codes}
                         orientation="other"
                         directions={[t('Counter-clockwise'), t('Clockwise')]}
-                        onChange={(kc) => turn.set(knob.encoderId, kc)}
+                        onChange={(kc) => {
+                          turn.set(knob.encoderId, kc);
+                          useKeys(k, 0);
+                        }}
                       />
+                      {notUsed(k, 0)}
                       {turn.layerCount > 1 && (
                         <div className="knob-all-layers">
                           {turn.sameOnAllLayers(knob.encoderId) ? (
@@ -165,6 +207,7 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
                     <Keycodes
                       onPickKey={(picked) => {
                         turn.setOne(knob.encoderId, picking.dir, picked.keymap);
+                        useKeys(k, 0);
                         setPicking(null);
                       }}
                     />
@@ -200,21 +243,25 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
                   </div>
                   <div className="pointing-row-control">
                     {values ? (
-                      <PairSelect
-                        label={`${name} ${t('Push and turn')}`}
-                        keycodes={values.knobs[k]}
-                        orientation="other"
-                        directions={[t('Counter-clockwise'), t('Clockwise')]}
-                        onChange={(kc) => {
-                          const knobs = values.knobs.slice();
-                          knobs[k] = kc;
-                          const [a, b] = knobKeycodeIds(k);
-                          write({ ...values, knobs }, [
-                            [a, kc[0], 2],
-                            [b, kc[1], 2],
-                          ]);
-                        }}
-                      />
+                      <>
+                        <PairSelect
+                          label={`${name} ${t('Push and turn')}`}
+                          keycodes={values.knobs[k]}
+                          orientation="other"
+                          directions={[t('Counter-clockwise'), t('Clockwise')]}
+                          onChange={(kc) => {
+                            const knobs = values.knobs.slice();
+                            knobs[k] = kc;
+                            const [a, b] = knobKeycodeIds(k);
+                            write({ ...values, knobs }, [
+                              [a, kc[0], 2],
+                              [b, kc[1], 2],
+                            ]);
+                            useKeys(k, 1);
+                          }}
+                        />
+                        {notUsed(k, 1)}
+                      </>
                     ) : (
                       <span className="pointing-checking">
                         {supported === null

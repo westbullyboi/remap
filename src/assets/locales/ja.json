@@ -1177,5 +1177,7 @@
   "Knob set to switch virtual desktops: turning moves to the next / previous desktop": "「仮想デスクトップ切替」にしたノブを回す：次／前のデスクトップに切り替わる",
   "Virtual desktops (Ctrl+Win+← / →)": "仮想デスクトップ（Ctrl+Win+← / →）",
   "Virtual desktops, Mac (Ctrl+← / →)": "仮想デスクトップ・Mac（Ctrl+← / →）",
-  "needs firmware r{{revision}}": "ファームウェア r{{revision}} 以降が必要"
+  "needs firmware r{{revision}}": "ファームウェア r{{revision}} 以降が必要",
+  "Not used now: \"{{setting}}\" is set to \"{{mode}}\", which takes over.": "今は使われていません：「{{setting}}」が「{{mode}}」になっているため、そちらが優先されます。",
+  "Use these keys": "このキーを使う"
 }
