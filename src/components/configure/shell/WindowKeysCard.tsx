@@ -2,13 +2,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import { t } from 'i18next';
 import { IKeyboard } from '../../../services/hid/Hid';
 import { firmwareFlasherStore } from '../firmware/firmwareFlasherStore';
+import {
+  MOD_ALT,
+  MOD_CTRL,
+  MOD_GUI,
+  MOD_SHIFT,
+  SHORTCUT_KEY_USAGES,
+  shortcutFromEvent,
+  usageName,
+} from '../../../services/macro/KeyEventCodes';
 
 // Window keys (firmware r31): custom keys Win ◧ … Win ↺ (QK_KB_10..15) send
 // the shortcut of the connected OS. Values 0xB0..0xBB: key n, PC = 0xB0 +
 // n * 2, Mac = + 1 (QMK keycodes: modifiers << 8 | key).
-const WINDOW_KEY_BASE = 0xb0;
+export const WINDOW_KEY_BASE = 0xb0;
 
-const KEYS = [
+export const WINDOW_KEYS = [
   { short: 'Win ◧', label: 'Left half' },
   { short: 'Win ◨', label: 'Right half' },
   { short: 'Win ▣', label: 'Maximize' },
@@ -29,6 +38,8 @@ const ENTER = 0x28;
 const BSPC = 0x2a;
 const KEY_M = 0x10;
 const KEY_F = 0x09;
+// The "Custom..." choice of the lists.
+const CUSTOM = -1;
 
 // Shortcuts to choose from, per OS.
 const PC_OPTIONS = [
@@ -52,15 +63,10 @@ const MAC_OPTIONS = [
   CTL | GUI | KEY_F,
 ];
 
-const KEY_NAMES: { [code: number]: string } = {
-  [LEFT]: '←',
-  [RIGHT]: '→',
-  [UP]: '↑',
-  [DOWN]: '↓',
+const MAC_KEY_NAMES: { [usage: number]: string } = {
   [ENTER]: 'Return',
   [BSPC]: 'Delete',
-  [KEY_M]: 'M',
-  [KEY_F]: 'F',
+  0x4c: 'Forward Delete',
 };
 
 export function shortcutLabel(code: number, mac: boolean): string {
@@ -68,19 +74,133 @@ export function shortcutLabel(code: number, mac: boolean): string {
   const mods = code >> 8;
   const parts: string[] = [];
   if (mac) {
-    if (mods & 1) parts.push('⌃');
-    if (mods & 4) parts.push('⌥');
-    if (mods & 2) parts.push('⇧');
-    if (mods & 8) parts.push('⌘');
+    if (mods & MOD_CTRL) parts.push('⌃');
+    if (mods & MOD_ALT) parts.push('⌥');
+    if (mods & MOD_SHIFT) parts.push('⇧');
+    if (mods & MOD_GUI) parts.push('⌘');
   } else {
-    if (mods & 8) parts.push('Win');
-    if (mods & 1) parts.push('Ctrl');
-    if (mods & 4) parts.push('Alt');
-    if (mods & 2) parts.push('Shift');
+    if (mods & MOD_GUI) parts.push('Win');
+    if (mods & MOD_CTRL) parts.push('Ctrl');
+    if (mods & MOD_ALT) parts.push('Alt');
+    if (mods & MOD_SHIFT) parts.push('Shift');
   }
-  const key =
-    KEY_NAMES[code & 0xff] ?? `0x${(code & 0xff).toString(16).toUpperCase()}`;
+  const usage = code & 0xff;
+  const key = (mac && MAC_KEY_NAMES[usage]) || usageName(usage);
   return mac ? parts.join('') + key : [...parts, key].join(' + ');
+}
+
+// The modifier toggles, in the order the OS shows them.
+const MOD_BUTTONS = (mac: boolean) =>
+  mac
+    ? [
+        { bit: MOD_CTRL, label: '⌃ Control' },
+        { bit: MOD_ALT, label: '⌥ Option' },
+        { bit: MOD_SHIFT, label: '⇧ Shift' },
+        { bit: MOD_GUI, label: '⌘ Command' },
+      ]
+    : [
+        { bit: MOD_GUI, label: 'Win' },
+        { bit: MOD_CTRL, label: 'Ctrl' },
+        { bit: MOD_ALT, label: 'Alt' },
+        { bit: MOD_SHIFT, label: 'Shift' },
+      ];
+
+// Any shortcut: modifiers + one key, typed on the keyboard or picked.
+export function ShortcutEditor(props: {
+  mac: boolean;
+  value: number;
+  onApply: (code: number) => void;
+  onCancel: () => void;
+}) {
+  const { mac } = props;
+  const [mods, setMods] = useState((props.value >> 8) & 0x0f);
+  const [key, setKey] = useState(props.value & 0xff || 0x50);
+  const [listening, setListening] = useState(false);
+  const captureRef = useRef<HTMLButtonElement | null>(null);
+  const code = (mods << 8) | key;
+
+  return (
+    <div className="shortcut-editor" role="group" aria-label={t('Shortcut')}>
+      <div className="shortcut-editor-row">
+        <button
+          ref={captureRef}
+          type="button"
+          className={`mx-btn mx-press shortcut-capture${
+            listening ? ' on' : ''
+          }`}
+          aria-pressed={listening}
+          onClick={() => {
+            setListening(!listening);
+            captureRef.current?.focus();
+          }}
+          onBlur={() => setListening(false)}
+          onKeyDown={(e) => {
+            if (!listening) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const next = shortcutFromEvent(e);
+            if (next === null) return;
+            setMods(next >> 8);
+            setKey(next & 0xff);
+            setListening(false);
+          }}
+        >
+          {listening ? t('Press the shortcut...') : t('Type the shortcut')}
+        </button>
+        <b className="shortcut-preview">{shortcutLabel(code, mac)}</b>
+      </div>
+      <div className="shortcut-editor-row">
+        {MOD_BUTTONS(mac).map((m) => (
+          <label key={m.bit} className="shortcut-mod">
+            <input
+              type="checkbox"
+              checked={(mods & m.bit) !== 0}
+              onChange={(e) =>
+                setMods(e.target.checked ? mods | m.bit : mods & ~m.bit)
+              }
+            />
+            {m.label}
+          </label>
+        ))}
+        <select
+          className="pointing-select"
+          value={key}
+          aria-label={t('Key')}
+          onChange={(e) => setKey(Number(e.target.value))}
+        >
+          {!SHORTCUT_KEY_USAGES.includes(key) && (
+            <option value={key}>{usageName(key)}</option>
+          )}
+          {SHORTCUT_KEY_USAGES.map((u) => (
+            <option key={u} value={u}>
+              {(mac && MAC_KEY_NAMES[u]) || usageName(u)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <p className="mx-sub">
+        {t(
+          'Shortcuts the OS takes first (such as Win + arrow keys) cannot be typed here: tick the modifiers and pick the key instead.'
+        )}
+      </p>
+      <div className="shortcut-editor-row">
+        <button
+          type="button"
+          className="mx-btn dark mx-press"
+          onClick={() => props.onApply(code)}
+        >
+          {t('Apply')}
+        </button>
+        <button
+          type="button"
+          className="mx-btn mx-press"
+          onClick={props.onCancel}
+        >
+          {t('Cancel')}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export function WindowKeysCard(props: { keyboard: IKeyboard | null }) {
@@ -88,6 +208,8 @@ export function WindowKeysCard(props: { keyboard: IKeyboard | null }) {
   const [supported, setSupported] = useState<boolean | null>(null);
   const [codes, setCodes] = useState<number[][] | null>(null);
   const [saving, setSaving] = useState(false);
+  // The shortcut being edited: [key, os].
+  const [editing, setEditing] = useState<[number, number] | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -97,7 +219,7 @@ export function WindowKeysCard(props: { keyboard: IKeyboard | null }) {
     if (!keyboard) return;
     (async () => {
       const next: number[][] = [];
-      for (let k = 0; k < KEYS.length; k++) {
+      for (let k = 0; k < WINDOW_KEYS.length; k++) {
         const pair: number[] = [];
         for (const os of [0, 1]) {
           const r = await keyboard.fetchCustomValue(
@@ -164,8 +286,12 @@ export function WindowKeysCard(props: { keyboard: IKeyboard | null }) {
       <select
         className="pointing-select"
         value={value}
-        aria-label={`${t(KEYS[key].label)} (${mac ? 'Mac' : 'PC'})`}
-        onChange={(e) => change(key, os, Number(e.target.value))}
+        aria-label={`${t(WINDOW_KEYS[key].label)} (${mac ? 'Mac' : 'PC'})`}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (v === CUSTOM) setEditing([key, os]);
+          else change(key, os, v);
+        }}
       >
         {!options.includes(value) && (
           <option value={value}>{shortcutLabel(value, mac)}</option>
@@ -175,6 +301,7 @@ export function WindowKeysCard(props: { keyboard: IKeyboard | null }) {
             {shortcutLabel(code, mac)}
           </option>
         ))}
+        <option value={CUSTOM}>{t('Custom...')}</option>
       </select>
     );
   };
@@ -196,14 +323,38 @@ export function WindowKeysCard(props: { keyboard: IKeyboard | null }) {
           </tr>
         </thead>
         <tbody>
-          {KEYS.map((k, i) => (
-            <tr key={k.short}>
-              <td>
-                <b>{k.short}</b> {t(k.label)}
-              </td>
-              <td>{select(i, 0)}</td>
-              <td>{select(i, 1)}</td>
-            </tr>
+          {WINDOW_KEYS.map((k, i) => (
+            <React.Fragment key={k.short}>
+              <tr>
+                <td>
+                  <b>{k.short}</b> {t(k.label)}
+                </td>
+                <td>{select(i, 0)}</td>
+                <td>{select(i, 1)}</td>
+              </tr>
+              {editing && editing[0] === i && (
+                <tr className="window-keys-edit">
+                  <td colSpan={3}>
+                    <span className="mx-sub">
+                      {t('{{key}} on a {{os}}', {
+                        key: `${k.short} ${t(k.label)}`,
+                        os: editing[1] === 1 ? 'Mac' : 'PC',
+                      })}
+                    </span>
+                    <ShortcutEditor
+                      key={editing[1]}
+                      mac={editing[1] === 1}
+                      value={codes[i][editing[1]]}
+                      onApply={(code) => {
+                        change(i, editing[1], code);
+                        setEditing(null);
+                      }}
+                      onCancel={() => setEditing(null)}
+                    />
+                  </td>
+                </tr>
+              )}
+            </React.Fragment>
           ))}
         </tbody>
       </table>

@@ -33,7 +33,7 @@ import {
   useLayerMeta,
 } from '../../../services/layers/LayerMeta';
 
-type BigTabId = 'keys' | 'pointing' | 'lighting' | 'cf';
+type BigTabId = 'keys' | 'pointing' | 'lighting' | 'check' | 'cf';
 
 const history = new RemapsHistory();
 
@@ -45,6 +45,7 @@ export default function EditorShell() {
     if (['touchpad', 'autoMouse', 'timing', 'knobs'].includes(v))
       return 'pointing';
     if (['leds'].includes(v)) return 'lighting';
+    if (v === 'check') return 'check';
     return 'keys';
   };
 
@@ -54,6 +55,7 @@ export default function EditorShell() {
     if (tab === 'keys') openEditorView('keymap');
     else if (tab === 'pointing') openEditorView('touchpad');
     else if (tab === 'lighting') openEditorView('leds');
+    else if (tab === 'check') openEditorView('check');
   };
 
   return (
@@ -87,6 +89,13 @@ export default function EditorShell() {
               onClick={() => goTab('lighting')}
             >
               Lighting
+            </button>
+            <button
+              className={bigTab === 'check' ? 'cur' : ''}
+              aria-current={bigTab === 'check'}
+              onClick={() => goTab('check')}
+            >
+              Check
             </button>
           </nav>
 
@@ -564,6 +573,19 @@ function ShellSubNav({
           onClick={() => openEditorView('leds')}
         >
           Effects
+        </button>
+      </nav>
+    );
+  }
+  if (bigTab === 'check') {
+    return (
+      <nav className="mx-subnav mx-anim-sub" aria-label="Check">
+        <button
+          className={view === 'check' ? 'cur' : ''}
+          aria-current={view === 'check'}
+          onClick={() => openEditorView('check')}
+        >
+          Self test
         </button>
       </nav>
     );

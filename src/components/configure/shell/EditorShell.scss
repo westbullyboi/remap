@@ -2137,6 +2137,50 @@ button:disabled {
   }
 }
 
+.window-keys-edit td {
+  border-top: none;
+  background: #f6f7f9;
+  border-radius: 10px;
+  padding: 10px;
+}
+.shortcut-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  .mx-btn {
+    height: 32px;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+  .mx-sub {
+    margin: 0;
+  }
+}
+.shortcut-editor-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  .pointing-select {
+    width: auto;
+    min-width: 120px;
+  }
+}
+.shortcut-capture.on {
+  border-color: #3b6fe0;
+  box-shadow: 0 0 0 3px rgba(59, 111, 224, 0.2);
+}
+.shortcut-preview {
+  font-size: 14px;
+}
+.shortcut-mod {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
 // Macro editor inside the Macros window: its own size, not the classic
 // layout's keyboard height.
 .mx-macro-edit {

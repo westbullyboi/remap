@@ -10,7 +10,8 @@ export type ConfigureView =
   | 'combos'
   | 'knobs'
   | PointingSettingsMode
-  | 'leds';
+  | 'leds'
+  | 'check';
 
 // Touchpad / Mouse Layer are always listed; each screen checks whether the
 // firmware supports them and offers a preview otherwise.
@@ -24,6 +25,7 @@ export const EDITOR_VIEWS: ConfigureView[] = [
   'combos',
   'knobs',
   'leds',
+  'check',
 ];
 
 // The screen shown, shared by both layouts so that any part of the editor
@@ -61,6 +63,7 @@ export function editorViewLabel(view: ConfigureView): string {
     leds: t('Layer LED colors'),
     macros: t('Macros'),
     layers: t('Layers'),
+    check: t('Self test'),
   };
   return labels[view];
 }
@@ -82,6 +85,7 @@ export function EditorViewIcon(props: {
     leds: 'M10 3v2M10 15v2M3 10h2M15 10h2M5 5l1.5 1.5M13.5 13.5L15 15M5 15l1.5-1.5M13.5 6.5L15 5M10 7a3 3 0 110 6 3 3 0 010-6z',
     macros: 'M4 4h5v5H4zM11 11h5v5h-5zM9 6.5h4.5V11',
     layers: 'M4 4h5v5H4zM11 11h5v5h-5zM9 6.5h4.5V11',
+    check: 'M10 3a7 7 0 110 14 7 7 0 010-14zM7 10l2 2 4-4',
   };
   return (
     <svg

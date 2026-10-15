@@ -25,6 +25,7 @@ import Keycodes from '../keycodes/Keycodes.container';
 import { MacroKey, MacroTap } from '../../../services/macro/Macro';
 import OsProfileBar from './OsProfileBar';
 import { WindowKeysCard } from './WindowKeysCard';
+import SelfTestPanel from '../selftest/SelfTestPanel';
 import { useOsEdit } from '../../../services/pointing/OsProfiles';
 
 // Settings that have a Mac version (firmware r22).
@@ -75,6 +76,8 @@ export default function ViewWindow(props: { view: ConfigureView }) {
     body = <Combos />;
   } else if (view === 'layers') {
     body = <EditorSidebar />;
+  } else if (view === 'check') {
+    body = <SelfTestPanel />;
   } else {
     body = <MacroWindowBody />;
   }

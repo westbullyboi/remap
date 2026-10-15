@@ -1,0 +1,226 @@
+.selftest {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  h3 {
+    margin: 0;
+    font-size: 15px;
+  }
+  .mx-btn {
+    height: 32px;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+}
+.selftest-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  .mx-sub {
+    margin: 0;
+    line-height: 1.5;
+  }
+}
+.selftest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.selftest-checks,
+.selftest-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.selftest-check {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 4px;
+  border-top: 1px solid #eceef2;
+  font-size: 13px;
+}
+.selftest-check-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  span {
+    color: #5b5e66;
+    overflow-wrap: anywhere;
+  }
+}
+.selftest-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 12px;
+  color: #fff;
+  background: #9a9ca3;
+}
+.selftest-status {
+  font-size: 12px;
+  color: #5b5e66;
+  white-space: nowrap;
+}
+.selftest-check.is-ok .selftest-mark {
+  background: #2f8a4c;
+}
+.selftest-check.is-warn .selftest-mark {
+  background: #c98a12;
+}
+.selftest-check.is-error .selftest-mark {
+  background: #a33a2c;
+}
+.selftest-rev {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #eceef2;
+  color: #5b5e66;
+  font-size: 11px;
+  font-weight: 600;
+}
+.selftest-update {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff6e5;
+  font-size: 13px;
+}
+.selftest-monitor-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.selftest-monitor {
+  flex: 1;
+  min-width: 0;
+  min-height: 150px;
+  max-height: 220px;
+  overflow: hidden;
+  padding: 10px 12px;
+  border: 1px dashed #c9ccd3;
+  border-radius: 12px;
+  background: #f6f7f9;
+  font-size: 13px;
+  cursor: crosshair;
+  outline: none;
+  &.on {
+    border-style: solid;
+    border-color: #3b6fe0;
+    box-shadow: 0 0 0 3px rgba(59, 111, 224, 0.15);
+  }
+  ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  li:first-child b {
+    color: #3b6fe0;
+  }
+}
+.selftest-monitor-empty {
+  color: #8a8d95;
+}
+.selftest-kind {
+  min-width: 96px;
+  font-size: 11px;
+  color: #8a8d95;
+}
+.selftest-times {
+  font-size: 11px;
+  color: #8a8d95;
+}
+.selftest-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 4px;
+  border-top: 1px solid #eceef2;
+  font-size: 13px;
+  .selftest-rev {
+    margin-left: 0;
+  }
+}
+.selftest-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  small {
+    color: #8a8d95;
+  }
+  small.is-missing {
+    color: #a33a2c;
+  }
+}
+.selftest-result {
+  display: inline-flex;
+  gap: 4px;
+  button {
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid #e1e3e8;
+    border-radius: 14px;
+    background: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .is-ok.on {
+    background: #2f8a4c;
+    border-color: #2f8a4c;
+    color: #fff;
+  }
+  .is-ng.on {
+    background: #a33a2c;
+    border-color: #a33a2c;
+    color: #fff;
+  }
+}
+.selftest-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: #8a8d95;
+}
+.selftest-report {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  padding: 8px;
+  border: 1px solid #e1e3e8;
+  border-radius: 8px;
+}
+
+@media (max-width: 560px) {
+  .selftest-item {
+    grid-template-columns: auto 1fr;
+    .selftest-result {
+      grid-column: 2;
+    }
+  }
+}
