@@ -10,7 +10,6 @@ import Keycodes from '../keycodes/Keycodes.container';
 import {
   fetchKnobExtras,
   KNOB_ACCELS,
-  KNOB_MODES,
   KNOB_REVISION,
   KnobExtras,
   knobExtrasWrites,
@@ -99,7 +98,7 @@ export function KnobExtraRows(props: {
   extras: Extras;
   keyboard: IKeyboard | null;
 }) {
-  const { knob, name, extras: x } = props;
+  const { knob, extras: x } = props;
   const label = useKeyLabel();
   const [picking, setPicking] = useState<'hold' | 'double' | null>(null);
   if (x.supported === false) {
@@ -112,11 +111,6 @@ export function KnobExtraRows(props: {
   const e = x.extras;
   if (!e) return null;
 
-  const setMode = (pushed: number, value: number) => {
-    const modes = e.modes.map((m) => m.slice());
-    modes[knob][pushed] = value;
-    x.change({ ...e, modes });
-  };
   const setKey = (which: 'hold' | 'double', code: number) => {
     const list = (which === 'hold' ? e.holdKc : e.doubleKc).slice();
     list[knob] = code;
@@ -124,29 +118,6 @@ export function KnobExtraRows(props: {
       which === 'hold' ? { ...e, holdKc: list } : { ...e, doubleKc: list }
     );
   };
-  const modeSelect = (pushed: number) => (
-    <select
-      className="pointing-select"
-      value={e.modes[knob][pushed]}
-      aria-label={`${name} ${pushed ? t('Push and turn') : t('Turn')}`}
-      onChange={(ev) => setMode(pushed, Number(ev.target.value))}
-    >
-      {KNOB_MODES.map((m) => {
-        // Older firmware would take a newer mode as the last one it knows.
-        const tooOld =
-          (m.revision ?? 0) > x.revision && m.value !== e.modes[knob][pushed];
-        return (
-          <option key={m.value} value={m.value} disabled={tooOld}>
-            {t(m.label)}
-            {tooOld &&
-              ` — ${t('needs firmware r{{revision}}', {
-                revision: m.revision,
-              })}`}
-          </option>
-        );
-      })}
-    </select>
-  );
   const keyButton = (which: 'hold' | 'double') => {
     const code = (which === 'hold' ? e.holdKc : e.doubleKc)[knob];
     const on = picking === which;
@@ -175,26 +146,6 @@ export function KnobExtraRows(props: {
 
   return (
     <>
-      <div className="pointing-row">
-        <div className="pointing-row-label">
-          <span className="label">{t('Turning does')}</span>
-          <span className="help">
-            {t(
-              'Switch windows: Alt + Tab (Cmd + Tab on a Mac) is held while you turn and let go when the knob rests. Select the layer: each step goes to the next / previous layer.'
-            )}
-          </span>
-        </div>
-        <div className="pointing-row-control">{modeSelect(0)}</div>
-      </div>
-      <div className="pointing-row">
-        <div className="pointing-row-label">
-          <span className="label">{t('Push and turn does')}</span>
-          <span className="help">
-            {t('"Send the keys" uses the push-and-turn keys below.')}
-          </span>
-        </div>
-        <div className="pointing-row-control">{modeSelect(1)}</div>
-      </div>
       <div className="pointing-row">
         <div className="pointing-row-label">
           <span className="label">{t('Acceleration')}</span>

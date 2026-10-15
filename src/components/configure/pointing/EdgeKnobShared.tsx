@@ -129,7 +129,12 @@ export function UpdateNotice(props: {
   );
 }
 
-// A preset pair of keycodes plus "reverse".
+// Something other than keys the firmware does when turning (knobs: switch
+// windows, select the layer...), listed with the key presets.
+export type PairAction = { value: string; label: string; disabled?: boolean };
+const ACTION_PREFIX = 'action:';
+
+// A preset pair of keycodes plus "reverse", and optionally actions.
 export function PairSelect(props: {
   label: string;
   keycodes: [number, number];
@@ -137,16 +142,29 @@ export function PairSelect(props: {
   directions: [string, string];
   // eslint-disable-next-line no-unused-vars
   onChange: (keycodes: [number, number]) => void;
+  actions?: PairAction[];
+  // The action in use (it wins over the keycodes), null for keys.
+  action?: string | null;
+  // eslint-disable-next-line no-unused-vars
+  onAction?: (value: string) => void;
 }) {
   const choice = matchPair(props.keycodes, props.orientation);
+  const action = props.action ?? null;
   const value =
-    choice.kind === 'none'
-      ? ''
-      : choice.kind === 'preset'
-        ? choice.preset.id
-        : 'custom';
+    action !== null
+      ? ACTION_PREFIX + action
+      : choice.kind === 'none'
+        ? ''
+        : choice.kind === 'preset'
+          ? choice.preset.id
+          : 'custom';
   const reversed = choice.kind === 'preset' && choice.reversed;
   const apply = (id: string, rev: boolean) => {
+    if (id.startsWith(ACTION_PREFIX)) {
+      props.onAction?.(id.slice(ACTION_PREFIX.length));
+      return;
+    }
+    if (id === 'custom') return props.onChange(props.keycodes);
     if (id === '') return props.onChange([0, 0]);
     const preset = PAIR_PRESETS.find((p) => p.id === id);
     if (preset) props.onChange(presetKeycodes(preset, props.orientation, rev));
@@ -160,19 +178,34 @@ export function PairSelect(props: {
         onChange={(e) => apply(e.target.value, false)}
       >
         <option value="">{t('None')}</option>
-        {PAIR_PRESETS.map((p) => (
-          <option key={p.id} value={p.id}>
-            {t(p.label)}
-          </option>
-        ))}
-        {choice.kind === 'custom' && (
-          <option value="custom">
-            {t('Custom')} ({hexadecimal(choice.keycodes[0], 4)} /{' '}
-            {hexadecimal(choice.keycodes[1], 4)})
-          </option>
+        {props.actions && props.actions.length > 0 && (
+          <optgroup label={t('Knob actions')}>
+            {props.actions.map((a) => (
+              <option
+                key={a.value}
+                value={ACTION_PREFIX + a.value}
+                disabled={a.disabled}
+              >
+                {a.label}
+              </option>
+            ))}
+          </optgroup>
         )}
+        <optgroup label={t('Keys')}>
+          {PAIR_PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {t(p.label)}
+            </option>
+          ))}
+          {choice.kind === 'custom' && (
+            <option value="custom">
+              {t('Custom')} ({hexadecimal(choice.keycodes[0], 4)} /{' '}
+              {hexadecimal(choice.keycodes[1], 4)})
+            </option>
+          )}
+        </optgroup>
       </select>
-      {choice.kind === 'preset' && (
+      {action === null && choice.kind === 'preset' && (
         <label className="edge-knob-reverse">
           <input
             type="checkbox"
@@ -182,7 +215,7 @@ export function PairSelect(props: {
           {t('Reverse')}
         </label>
       )}
-      {choice.kind === 'preset' && (
+      {action === null && choice.kind === 'preset' && (
         <span className="edge-knob-directions">
           {props.directions[0]} → {t(describeKeycode(props.keycodes[0]))} /{' '}
           {props.directions[1]} → {t(describeKeycode(props.keycodes[1]))}

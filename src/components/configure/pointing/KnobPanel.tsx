@@ -42,29 +42,34 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
     modes[k][pushed] = 0;
     extras.change({ ...e, modes });
   };
-  const notUsed = (k: number, pushed: number) => {
-    const mode = KNOB_MODES.find((m) => m.value === modeOf(k, pushed));
-    if (!mode || mode.value === 0) return null;
-    return (
-      <div className="knob-not-used" role="status">
-        <span>
-          {t(
-            'Not used now: "{{setting}}" is set to "{{mode}}", which takes over.',
-            {
-              setting: pushed ? t('Push and turn does') : t('Turning does'),
-              mode: t(mode.label),
-            }
-          )}
-        </span>
-        <button
-          type="button"
-          className="mx-btn mx-press"
-          onClick={() => useKeys(k, pushed)}
-        >
-          {t('Use these keys')}
-        </button>
-      </div>
-    );
+  // The knob actions (firmware r32+), listed with the key patterns.
+  const actionProps = (k: number, pushed: number) => {
+    const e = extras.extras;
+    if (!e) return {};
+    const current = modeOf(k, pushed);
+    return {
+      actions: KNOB_MODES.filter((m) => m.value !== 0).map((m) => {
+        const tooOld =
+          (m.revision ?? 0) > extras.revision && m.value !== current;
+        return {
+          value: String(m.value),
+          label:
+            t(m.label) +
+            (tooOld
+              ? ` — ${t('needs firmware r{{revision}}', {
+                  revision: m.revision,
+                })}`
+              : ''),
+          disabled: tooOld,
+        };
+      }),
+      action: current ? String(current) : null,
+      onAction: (value: string) => {
+        const modes = e.modes.map((m) => m.slice());
+        modes[k][pushed] = Number(value);
+        extras.change({ ...e, modes });
+      },
+    };
   };
   // A direction whose key is being picked from the keycode palette.
   const [picking, setPicking] = useState<{
@@ -144,8 +149,8 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
                           turn.set(knob.encoderId, kc);
                           useKeys(k, 0);
                         }}
+                        {...actionProps(k, 0)}
                       />
-                      {notUsed(k, 0)}
                       {turn.layerCount > 1 && (
                         <div className="knob-all-layers">
                           {turn.sameOnAllLayers(knob.encoderId) ? (
@@ -259,8 +264,8 @@ export function KnobPanel(props: { keyboard: IKeyboard | null }) {
                             ]);
                             useKeys(k, 1);
                           }}
+                          {...actionProps(k, 1)}
                         />
-                        {notUsed(k, 1)}
                       </>
                     ) : (
                       <span className="pointing-checking">

@@ -1086,5 +1086,7 @@
   "Virtual desktops, Mac (Ctrl+← / →)": "Virtual desktops, Mac (Ctrl+← / →)",
   "needs firmware r{{revision}}": "needs firmware r{{revision}}",
   "Not used now: \"{{setting}}\" is set to \"{{mode}}\", which takes over.": "Not used now: \"{{setting}}\" is set to \"{{mode}}\", which takes over.",
-  "Use these keys": "Use these keys"
+  "Use these keys": "Use these keys",
+  "Knob actions": "Knob actions",
+  "Keys": "Keys"
 }

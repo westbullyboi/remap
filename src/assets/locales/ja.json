@@ -1179,5 +1179,7 @@
   "Virtual desktops, Mac (Ctrl+← / →)": "仮想デスクトップ・Mac（Ctrl+← / →）",
   "needs firmware r{{revision}}": "ファームウェア r{{revision}} 以降が必要",
   "Not used now: \"{{setting}}\" is set to \"{{mode}}\", which takes over.": "今は使われていません：「{{setting}}」が「{{mode}}」になっているため、そちらが優先されます。",
-  "Use these keys": "このキーを使う"
+  "Use these keys": "このキーを使う",
+  "Knob actions": "ノブの動作",
+  "Keys": "キー"
 }
