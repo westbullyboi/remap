@@ -22,6 +22,7 @@ import Combos from '../combos/Combos';
 import EditorSidebar from '../sidebar/EditorSidebar.container';
 import MacroEditor from '../macroeditor/MacroEditor.container';
 import OsProfileBar from './OsProfileBar';
+import { WindowKeysCard } from './WindowKeysCard';
 import { useOsEdit } from '../../../services/pointing/OsProfiles';
 
 // Settings that have a Mac version (firmware r22).
@@ -119,17 +120,22 @@ function MacroWindowBody() {
     (s: RootState) => s.entities.device.macro.maxCount
   );
   const labelLang = useSelector((s: RootState) => s.app.labelLang);
+  const keyboard = useSelector((s: RootState) => s.entities.keyboard);
   const customKeycodes = useSelector(
     (s: RootState) => s.entities.keyboardDefinition?.customKeycodes
   );
   useEffect(() => () => void dispatch(MacroEditorActions.clearMacroKey()), []);
 
   if (macroKey) return <MacroEditor />;
+  const windowKeys = <WindowKeysCard keyboard={keyboard} />;
   if (!maxCount) {
     return (
-      <p className="mx-sub">
-        {t('This keyboard has no macros (dynamic keymap macros are off).')}
-      </p>
+      <div>
+        <p className="mx-sub">
+          {t('This keyboard has no macros (dynamic keymap macros are off).')}
+        </p>
+        {windowKeys}
+      </div>
     );
   }
   return (
@@ -160,6 +166,7 @@ function MacroWindowBody() {
           </button>
         ))}
       </div>
+      {windowKeys}
     </div>
   );
 }

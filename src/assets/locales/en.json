@@ -934,5 +934,15 @@
   "While you slide along an edge of the touchpad, the LEDs show where the finger is along it as a bar (filling from the left, or from the bottom for the side edges).": "While you slide along an edge of the touchpad, the LEDs show where the finger is along it as a bar (filling from the left, or from the bottom for the side edges).",
   "Show the bar": "Show the bar",
   "On": "On",
-  "Bar color": "Bar color"
+  "Bar color": "Bar color",
+  "Left half": "Left half",
+  "Right half": "Right half",
+  "Maximize": "Maximize",
+  "Minimize": "Minimize",
+  "Next display": "Next display",
+  "Restore": "Restore",
+  "Window keys need newer firmware (Matrix r{{revision}} or later).": "Window keys need newer firmware (Matrix r{{revision}} or later).",
+  "Window keys": "Window keys",
+  "Key": "Key",
+  "Put Win ◧, Win ◨, Win ▣, Win _, Win ⇥ and Win ↺ (Key Config > Custom) on the keymap: they send the shortcut of the connected OS. On a Mac the defaults are those of the free app Rectangle (install it, or set your own shortcuts): the shortcuts built into macOS use the Fn / Globe key, which this keyboard cannot send.": "Put Win ◧, Win ◨, Win ▣, Win _, Win ⇥ and Win ↺ (Key Config > Custom) on the keymap: they send the shortcut of the connected OS. On a Mac the defaults are those of the free app Rectangle (install it, or set your own shortcuts): the shortcuts built into macOS use the Fn / Globe key, which this keyboard cannot send."
 }

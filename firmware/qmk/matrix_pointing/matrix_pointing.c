@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 30
+#define MP_REVISION 31
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -673,6 +673,110 @@ static inline uint16_t mp_swipe_kc(uint8_t dir) {
     return mp_config.swipe_kc[dir];
 }
 
+// ---------------------------------------------------------------------------
+// Window keys (revision 31): custom keys QK_KB_10..15 put the active window
+// on the left / right half, maximize, minimize, move it to the next display
+// or restore it, with the shortcut of the host OS: Windows' own (Win +
+// arrows), and on a Mac those of the free app Rectangle by default (macOS'
+// own tiling shortcuts use the Fn / Globe key, which a keyboard like this
+// cannot send). Both sets can be changed from the editor (values
+// 0xB0..0xBB: key n, PC = 0xB0 + n * 2, Mac = + 1).
+//
+// They live in a second 64-byte block before the per-OS block, also taken
+// from the end of the macro buffer (the keymap does not move):
+//   config.h: #define MATRIX_POINTING_KEY_BLOCK
+//             #define DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 128)
+#define MP_WINDOW_KEYS 6
+#if defined(MATRIX_POINTING_KEY_BLOCK) && defined(MP_OS)
+#    define MP_KEY_BLOCK
+#    define MP_KEY_EEPROM_ADDR ((TOTAL_EEPROM_BYTE_COUNT) - 128)
+#    define MP_KEY_MAGIC 0x4B59 // 'KY'
+_Static_assert(DYNAMIC_KEYMAP_EEPROM_MAX_ADDR < MP_KEY_EEPROM_ADDR, "the macro buffer overlaps the key block: DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 128)");
+typedef struct __attribute__((packed)) {
+    uint16_t magic;
+    uint8_t  version;
+    uint8_t  checksum;
+    uint16_t window_kc[MP_WINDOW_KEYS][2]; // [PC, Mac]
+} mp_keys_t;
+_Static_assert(sizeof(mp_keys_t) <= 64, "mp_keys_t must fit 64 bytes");
+
+static const mp_keys_t mp_keys_defaults = {
+    .magic   = MP_KEY_MAGIC,
+    .version = 1,
+    .window_kc =
+        {
+            {LGUI(KC_LEFT), LCTL(LALT(KC_LEFT))},                // left half
+            {LGUI(KC_RIGHT), LCTL(LALT(KC_RIGHT))},              // right half
+            {LGUI(KC_UP), LCTL(LALT(KC_ENTER))},                 // maximize
+            {LGUI(KC_DOWN), LGUI(KC_M)},                         // minimize
+            {LGUI(LSFT(KC_RIGHT)), LCTL(LALT(LGUI(KC_RIGHT)))},  // next display
+            {LGUI(KC_DOWN), LCTL(LALT(KC_BACKSPACE))},           // restore
+        },
+};
+static mp_keys_t mp_keys = {0};
+
+static uint8_t mp_keys_checksum(const mp_keys_t *k) {
+    const uint8_t *b   = (const uint8_t *)k;
+    uint8_t        sum = 0x3C;
+    for (uint8_t i = 4; i < sizeof(mp_keys_t); i++) sum = (uint8_t)((sum << 1 | sum >> 7) ^ b[i]);
+    return sum;
+}
+static void mp_keys_load(void) {
+    eeprom_read_block(&mp_keys, (void *)(uintptr_t)MP_KEY_EEPROM_ADDR, sizeof(mp_keys));
+    if (mp_keys.magic != MP_KEY_MAGIC || mp_keys.version != 1 || mp_keys.checksum != mp_keys_checksum(&mp_keys)) {
+        mp_keys = mp_keys_defaults; // fresh (or the end of an old macro buffer)
+    }
+}
+static void mp_keys_save(void) {
+    mp_keys.magic    = MP_KEY_MAGIC;
+    mp_keys.version  = 1;
+    mp_keys.checksum = mp_keys_checksum(&mp_keys);
+    eeprom_update_block(&mp_keys, (void *)(uintptr_t)MP_KEY_EEPROM_ADDR, sizeof(mp_keys));
+}
+
+// Mac or not, as the per-OS settings decide (fixed PC / Mac there wins).
+static bool mp_host_is_mac(void) {
+    if (mp_os.enabled && mp_os.mode != 0) return mp_os.mode == 2;
+    return mp_os_seen == OS_MACOS || mp_os_seen == OS_IOS;
+}
+
+static bool mp_window_key(uint16_t keycode, bool pressed) {
+    if (keycode < QK_KB_10 || keycode >= QK_KB_10 + MP_WINDOW_KEYS) return true;
+    if (pressed) {
+        const uint16_t kc = mp_keys.window_kc[keycode - QK_KB_10][mp_host_is_mac() ? 1 : 0];
+        if (kc != KC_NO && kc <= QK_MODS_MAX) tap_code16(kc);
+    }
+    return false;
+}
+
+static bool mp_keys_get_value(uint8_t id, uint8_t *data) {
+    if (id < 0xB0 || id >= 0xB0 + MP_WINDOW_KEYS * 2) return false;
+    uint16_t v;
+    memcpy(&v, &mp_keys.window_kc[(id - 0xB0) / 2][(id - 0xB0) % 2], sizeof(v));
+    data[0] = v >> 8;
+    data[1] = v & 0xFF;
+    return true;
+}
+static bool mp_keys_set_value(uint8_t id, const uint8_t *data) {
+    if (id < 0xB0 || id >= 0xB0 + MP_WINDOW_KEYS * 2) return false;
+    const uint16_t v = (uint16_t)((data[0] << 8) | data[1]);
+    memcpy(&mp_keys.window_kc[(id - 0xB0) / 2][(id - 0xB0) % 2], &v, sizeof(v));
+    return true;
+}
+#else
+static void mp_keys_load(void) {}
+static void mp_keys_save(void) {}
+static bool mp_window_key(uint16_t keycode, bool pressed) {
+    return true;
+}
+static bool mp_keys_get_value(uint8_t id, uint8_t *data) {
+    return false;
+}
+static bool mp_keys_set_value(uint8_t id, const uint8_t *data) {
+    return false;
+}
+#endif
+
 #if defined(VIA_ENABLE) && defined(MATRIX_POINTING_EXT_EEPROM_OFFSET)
 // Keep the keymap over firmware updates (revision 21). VIA accepts its saved
 // data only when the build date matches, so every new build reset the
@@ -1040,6 +1144,7 @@ static void mp_load(void) {
         mp_write_field_at(&mp_ext, &mp_ext_fields[i], mp_read_field_at(&mp_ext, &mp_ext_fields[i]));
     }
     mp_os_load();
+    mp_keys_load();
 }
 
 // Drivers may ask for settings before keyboard_post_init_user() runs.
@@ -3247,6 +3352,7 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
             }
             if (mp_combo_get_value(*value_id, value_data, length - 3)) return;
             if (mp_os_get_value(*value_id, value_data)) return;
+            if (mp_keys_get_value(*value_id, value_data)) return;
             if (mp_mirror_get_value(*value_id, value_data)) return;
             if (*value_id == 0xA9) {
                 // Touchpad movement fetched from the other half in the last
@@ -3287,6 +3393,7 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
                 return;
             }
             if (mp_os_set_value(*value_id, value_data)) return;
+            if (mp_keys_set_value(*value_id, value_data)) return;
             if (mp_mirror_set_value(*value_id, value_data)) return;
             const mp_field_t *field = mp_find_field(*value_id);
             void             *block = &mp_config;
@@ -3309,6 +3416,7 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
             mp_combos_save();
             mp_ext_save();
             mp_os_save();
+            mp_keys_save();
             return;
         default:
             *command_id = id_unhandled;
@@ -3628,6 +3736,7 @@ bool matrix_pointing_process_record(uint16_t keycode, keyrecord_t *record) {
         mp_last_key_time = timer_read();
         mp_key_pressed   = true;
     }
+    if (!mp_window_key(keycode, record->event.pressed)) return false;
 #ifdef MP_KNOBS
     mp_ensure_loaded();
     if (!mp_knob_process(keycode, record)) return false;

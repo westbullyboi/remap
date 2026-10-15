@@ -56,6 +56,36 @@
       "name": "Touchpad Mode 3",
       "title": "押している間、タッチパッドを「モード 3」の動作にする（Touchpad 設定で選ぶ）",
       "shortName": "TP3"
+    },
+    {
+      "name": "Window Left Half",
+      "title": "ウィンドウを画面の左半分に（Windows / Mac を自動判別）",
+      "shortName": "Win ◧"
+    },
+    {
+      "name": "Window Right Half",
+      "title": "ウィンドウを画面の右半分に",
+      "shortName": "Win ◨"
+    },
+    {
+      "name": "Window Maximize",
+      "title": "ウィンドウを最大化",
+      "shortName": "Win ▣"
+    },
+    {
+      "name": "Window Minimize",
+      "title": "ウィンドウを最小化",
+      "shortName": "Win _"
+    },
+    {
+      "name": "Window Next Display",
+      "title": "ウィンドウを隣の画面へ",
+      "shortName": "Win ⇥"
+    },
+    {
+      "name": "Window Restore",
+      "title": "ウィンドウを元のサイズに",
+      "shortName": "Win ↺"
     }
   ],
   "keycodes": ["qmk_lighting"],

@@ -1027,5 +1027,15 @@
   "While you slide along an edge of the touchpad, the LEDs show where the finger is along it as a bar (filling from the left, or from the bottom for the side edges).": "タッチパッドの縁をなぞっている間、指の位置を LED のバーで表示します（上下の縁は左から、左右の縁は下から伸びます）。",
   "Show the bar": "バーを表示",
   "On": "オン",
-  "Bar color": "バーの色"
+  "Bar color": "バーの色",
+  "Left half": "左半分",
+  "Right half": "右半分",
+  "Maximize": "最大化",
+  "Minimize": "最小化",
+  "Next display": "隣の画面へ",
+  "Restore": "元のサイズ",
+  "Window keys need newer firmware (Matrix r{{revision}} or later).": "ウィンドウ配置キーには新しいファームウェア（Matrix r{{revision}} 以降）が必要です。",
+  "Window keys": "ウィンドウ配置キー",
+  "Key": "キー",
+  "Put Win ◧, Win ◨, Win ▣, Win _, Win ⇥ and Win ↺ (Key Config > Custom) on the keymap: they send the shortcut of the connected OS. On a Mac the defaults are those of the free app Rectangle (install it, or set your own shortcuts): the shortcuts built into macOS use the Fn / Globe key, which this keyboard cannot send.": "Win ◧・Win ◨・Win ▣・Win _・Win ⇥・Win ↺（キー設定 > カスタム）をキーマップに置くと、接続中の OS に合わせたショートカットを送ります。Mac の初期値は無料アプリ Rectangle のショートカットです（Rectangle を入れるか、独自のショートカットを選んでください）。macOS 標準の配置ショートカットは Fn（地球儀）キーを使うため、このキーボードからは送れません。"
 }

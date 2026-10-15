@@ -78,6 +78,20 @@ OS_DETECTION_ENABLE = yes
 - Ctrl と GUI の入れ替えは QMK の `keymap_config` を実行中だけ変えます（保存はしません）。
   このモジュールが入れ替えたときだけ戻すので、マジックキーでの入れ替えには影響しません。
 
+## リビジョン 31: ウィンドウ配置キー
+
+カスタムキー QK*KB_10〜15（Win ◧ 左半分・Win ◨ 右半分・Win ▣ 最大化・Win * 最小化・Win ⇥ 隣の画面へ・Win ↺ 元のサイズ）は、
+接続先の OS に合わせたショートカットを送ります（OS ごとの設定で PC / Mac を固定していればそれに従う）。
+初期値は Windows が Win + 矢印など（Windows 標準）、Mac が無料アプリ Rectangle の初期ショートカット
+（⌃⌥← など）です。macOS 標準の配置ショートカットは Fn（地球儀）キーとの組み合わせで、USB キーボードの通常のキーコードでは送れないためです。
+値 `0xB0`〜`0xBB`（キー n の PC = `0xB0 + n × 2`、Mac = +1）。
+
+```c
+// config.h（EEPROM の末尾 128 バイトをマクロ領域から使う。キーマップの位置は変わらない）
+#define MATRIX_POINTING_KEY_BLOCK
+#define DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 128)
+```
+
 ## リビジョン 30: キーを押しながらのタッチパッド操作・縁スライダーの LED バー
 
 - **タッチパッドのモードキー**（キーボード定義のカスタムキー QK_KB_6〜9：TP1・TP1 TG・TP2・TP3。

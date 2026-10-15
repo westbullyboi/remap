@@ -1,4 +1,4 @@
-From 0168f941b887cefe716baa190dbcb20f0613f718 Mon Sep 17 00:00:00 2001
+From dba0f7faed2744ec12d2ef61face558415be3890 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 7 Oct 2026 14:40:51 +0000
 Subject: [PATCH] Add Matrix editor support and fix the build on the multitouch
@@ -37,22 +37,24 @@ Subject: [PATCH] Add Matrix editor support and fix the build on the multitouch
   movement in the split poll, back-to-back polls only while in use).
 - Revision 30: touchpad modes while a key is held (QK_KB_6-9), edge
   slider LED bar.
+- Revision 31: window keys (QK_KB_10-15) with per-OS shortcuts, in a key
+  block before the per-OS block (macro buffer 128 bytes shorter).
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- keyboards/corne_procyon36/config.h            |   94 +-
+ keyboards/corne_procyon36/config.h            |   96 +-
  keyboards/corne_procyon36/digitizer_user.c    |   99 +-
  keyboards/corne_procyon36/keyboard.json       |    2 +-
  .../corne_procyon36/keymaps/default/keymap.c  |   26 +-
- keyboards/corne_procyon36/matrix_pointing.c   | 3698 +++++++++++++++++
+ keyboards/corne_procyon36/matrix_pointing.c   | 3807 +++++++++++++++++
  keyboards/corne_procyon36/matrix_pointing.h   |   94 +
  keyboards/corne_procyon36/rules.mk            |   12 +-
- 7 files changed, 3925 insertions(+), 100 deletions(-)
+ 7 files changed, 4036 insertions(+), 100 deletions(-)
  create mode 100644 keyboards/corne_procyon36/matrix_pointing.c
  create mode 100644 keyboards/corne_procyon36/matrix_pointing.h
 
 diff --git a/keyboards/corne_procyon36/config.h b/keyboards/corne_procyon36/config.h
-index e074887..6bb7957 100644
+index e074887..97461bc 100644
 --- a/keyboards/corne_procyon36/config.h
 +++ b/keyboards/corne_procyon36/config.h
 @@ -69,7 +69,27 @@
@@ -84,7 +86,7 @@ index e074887..6bb7957 100644
  
  /* ============================================================================
   * その他の設定
-@@ -81,3 +101,75 @@
+@@ -81,3 +101,77 @@
   * Auto Mouse Layer 設定
   * ============================================================================ */
  #define POINTING_DEVICE_AUTO_MOUSE_ENABLE
@@ -105,7 +107,9 @@ index e074887..6bb7957 100644
 +// OS ごとの設定（r22）: Mac 用のキーコード一式を EEPROM の末尾 64 バイトに保存する。
 +// マクロ領域の末尾を 64 バイト縮めるだけなので、キーマップの位置は変わらない（更新で消えない）
 +#define MATRIX_POINTING_OS_PROFILES
-+#define DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 64)
++// r31: その手前の 64 バイトにウィンドウ配置キーなどの設定（MATRIX_POINTING_KEY_BLOCK）。合計 128 バイトをマクロ領域の末尾から使う
++#define MATRIX_POINTING_KEY_BLOCK
++#define DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 128)
 +// 左右の設定をそろえる（r24）: USB 側が EEPROM（キーマップ・マクロ・ライティング・Matrix の設定）を反対側へコピーする
 +#define MATRIX_POINTING_SPLIT_MIRROR
 +#define MATRIX_POINTING_EDGE_ZONES               // タッチパッドの縁スライダー・四隅タップ
@@ -367,10 +371,10 @@ index 2784405..a661c11 100644
  }
 diff --git a/keyboards/corne_procyon36/matrix_pointing.c b/keyboards/corne_procyon36/matrix_pointing.c
 new file mode 100644
-index 0000000..8f1b380
+index 0000000..aabbf79
 --- /dev/null
 +++ b/keyboards/corne_procyon36/matrix_pointing.c
-@@ -0,0 +1,3698 @@
+@@ -0,0 +1,3807 @@
 +// Matrix pointing settings for QMK (touchpad + auto mouse layer).
 +// See matrix_pointing.h and README.md next to this file.
 +//
@@ -429,7 +433,7 @@ index 0000000..8f1b380
 +// Read-only value 0x7C: revision of this module, so the editor can tell that
 +// the keyboard runs an older build. Bump it with every behaviour change.
 +#define MP_REVISION_VALUE_ID 0x7C
-+#define MP_REVISION 30
++#define MP_REVISION 31
 +// Read-only value 0x7D: the other half of a split keyboard —
 +// [state, its revision (2), this build's ID (2), its build ID (2)];
 +// state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -1046,6 +1050,110 @@ index 0000000..8f1b380
 +    return mp_config.swipe_kc[dir];
 +}
 +
++// ---------------------------------------------------------------------------
++// Window keys (revision 31): custom keys QK_KB_10..15 put the active window
++// on the left / right half, maximize, minimize, move it to the next display
++// or restore it, with the shortcut of the host OS: Windows' own (Win +
++// arrows), and on a Mac those of the free app Rectangle by default (macOS'
++// own tiling shortcuts use the Fn / Globe key, which a keyboard like this
++// cannot send). Both sets can be changed from the editor (values
++// 0xB0..0xBB: key n, PC = 0xB0 + n * 2, Mac = + 1).
++//
++// They live in a second 64-byte block before the per-OS block, also taken
++// from the end of the macro buffer (the keymap does not move):
++//   config.h: #define MATRIX_POINTING_KEY_BLOCK
++//             #define DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 128)
++#define MP_WINDOW_KEYS 6
++#if defined(MATRIX_POINTING_KEY_BLOCK) && defined(MP_OS)
++#    define MP_KEY_BLOCK
++#    define MP_KEY_EEPROM_ADDR ((TOTAL_EEPROM_BYTE_COUNT) - 128)
++#    define MP_KEY_MAGIC 0x4B59 // 'KY'
++_Static_assert(DYNAMIC_KEYMAP_EEPROM_MAX_ADDR < MP_KEY_EEPROM_ADDR, "the macro buffer overlaps the key block: DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 128)");
++typedef struct __attribute__((packed)) {
++    uint16_t magic;
++    uint8_t  version;
++    uint8_t  checksum;
++    uint16_t window_kc[MP_WINDOW_KEYS][2]; // [PC, Mac]
++} mp_keys_t;
++_Static_assert(sizeof(mp_keys_t) <= 64, "mp_keys_t must fit 64 bytes");
++
++static const mp_keys_t mp_keys_defaults = {
++    .magic   = MP_KEY_MAGIC,
++    .version = 1,
++    .window_kc =
++        {
++            {LGUI(KC_LEFT), LCTL(LALT(KC_LEFT))},                // left half
++            {LGUI(KC_RIGHT), LCTL(LALT(KC_RIGHT))},              // right half
++            {LGUI(KC_UP), LCTL(LALT(KC_ENTER))},                 // maximize
++            {LGUI(KC_DOWN), LGUI(KC_M)},                         // minimize
++            {LGUI(LSFT(KC_RIGHT)), LCTL(LALT(LGUI(KC_RIGHT)))},  // next display
++            {LGUI(KC_DOWN), LCTL(LALT(KC_BACKSPACE))},           // restore
++        },
++};
++static mp_keys_t mp_keys = {0};
++
++static uint8_t mp_keys_checksum(const mp_keys_t *k) {
++    const uint8_t *b   = (const uint8_t *)k;
++    uint8_t        sum = 0x3C;
++    for (uint8_t i = 4; i < sizeof(mp_keys_t); i++) sum = (uint8_t)((sum << 1 | sum >> 7) ^ b[i]);
++    return sum;
++}
++static void mp_keys_load(void) {
++    eeprom_read_block(&mp_keys, (void *)(uintptr_t)MP_KEY_EEPROM_ADDR, sizeof(mp_keys));
++    if (mp_keys.magic != MP_KEY_MAGIC || mp_keys.version != 1 || mp_keys.checksum != mp_keys_checksum(&mp_keys)) {
++        mp_keys = mp_keys_defaults; // fresh (or the end of an old macro buffer)
++    }
++}
++static void mp_keys_save(void) {
++    mp_keys.magic    = MP_KEY_MAGIC;
++    mp_keys.version  = 1;
++    mp_keys.checksum = mp_keys_checksum(&mp_keys);
++    eeprom_update_block(&mp_keys, (void *)(uintptr_t)MP_KEY_EEPROM_ADDR, sizeof(mp_keys));
++}
++
++// Mac or not, as the per-OS settings decide (fixed PC / Mac there wins).
++static bool mp_host_is_mac(void) {
++    if (mp_os.enabled && mp_os.mode != 0) return mp_os.mode == 2;
++    return mp_os_seen == OS_MACOS || mp_os_seen == OS_IOS;
++}
++
++static bool mp_window_key(uint16_t keycode, bool pressed) {
++    if (keycode < QK_KB_10 || keycode >= QK_KB_10 + MP_WINDOW_KEYS) return true;
++    if (pressed) {
++        const uint16_t kc = mp_keys.window_kc[keycode - QK_KB_10][mp_host_is_mac() ? 1 : 0];
++        if (kc != KC_NO && kc <= QK_MODS_MAX) tap_code16(kc);
++    }
++    return false;
++}
++
++static bool mp_keys_get_value(uint8_t id, uint8_t *data) {
++    if (id < 0xB0 || id >= 0xB0 + MP_WINDOW_KEYS * 2) return false;
++    uint16_t v;
++    memcpy(&v, &mp_keys.window_kc[(id - 0xB0) / 2][(id - 0xB0) % 2], sizeof(v));
++    data[0] = v >> 8;
++    data[1] = v & 0xFF;
++    return true;
++}
++static bool mp_keys_set_value(uint8_t id, const uint8_t *data) {
++    if (id < 0xB0 || id >= 0xB0 + MP_WINDOW_KEYS * 2) return false;
++    const uint16_t v = (uint16_t)((data[0] << 8) | data[1]);
++    memcpy(&mp_keys.window_kc[(id - 0xB0) / 2][(id - 0xB0) % 2], &v, sizeof(v));
++    return true;
++}
++#else
++static void mp_keys_load(void) {}
++static void mp_keys_save(void) {}
++static bool mp_window_key(uint16_t keycode, bool pressed) {
++    return true;
++}
++static bool mp_keys_get_value(uint8_t id, uint8_t *data) {
++    return false;
++}
++static bool mp_keys_set_value(uint8_t id, const uint8_t *data) {
++    return false;
++}
++#endif
++
 +#if defined(VIA_ENABLE) && defined(MATRIX_POINTING_EXT_EEPROM_OFFSET)
 +// Keep the keymap over firmware updates (revision 21). VIA accepts its saved
 +// data only when the build date matches, so every new build reset the
@@ -1413,6 +1521,7 @@ index 0000000..8f1b380
 +        mp_write_field_at(&mp_ext, &mp_ext_fields[i], mp_read_field_at(&mp_ext, &mp_ext_fields[i]));
 +    }
 +    mp_os_load();
++    mp_keys_load();
 +}
 +
 +// Drivers may ask for settings before keyboard_post_init_user() runs.
@@ -3620,6 +3729,7 @@ index 0000000..8f1b380
 +            }
 +            if (mp_combo_get_value(*value_id, value_data, length - 3)) return;
 +            if (mp_os_get_value(*value_id, value_data)) return;
++            if (mp_keys_get_value(*value_id, value_data)) return;
 +            if (mp_mirror_get_value(*value_id, value_data)) return;
 +            if (*value_id == 0xA9) {
 +                // Touchpad movement fetched from the other half in the last
@@ -3660,6 +3770,7 @@ index 0000000..8f1b380
 +                return;
 +            }
 +            if (mp_os_set_value(*value_id, value_data)) return;
++            if (mp_keys_set_value(*value_id, value_data)) return;
 +            if (mp_mirror_set_value(*value_id, value_data)) return;
 +            const mp_field_t *field = mp_find_field(*value_id);
 +            void             *block = &mp_config;
@@ -3682,6 +3793,7 @@ index 0000000..8f1b380
 +            mp_combos_save();
 +            mp_ext_save();
 +            mp_os_save();
++            mp_keys_save();
 +            return;
 +        default:
 +            *command_id = id_unhandled;
@@ -4001,6 +4113,7 @@ index 0000000..8f1b380
 +        mp_last_key_time = timer_read();
 +        mp_key_pressed   = true;
 +    }
++    if (!mp_window_key(keycode, record->event.pressed)) return false;
 +#ifdef MP_KNOBS
 +    mp_ensure_loaded();
 +    if (!mp_knob_process(keycode, record)) return false;
