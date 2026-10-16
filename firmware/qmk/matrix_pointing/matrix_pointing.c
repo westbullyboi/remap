@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 36
+#define MP_REVISION 37
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -821,13 +821,195 @@ __attribute__((unused)) static bool mp_host_is_mac(void) {
     return mp_os_seen == OS_MACOS || mp_os_seen == OS_IOS;
 }
 
-static bool mp_window_key(uint16_t keycode, bool pressed) {
-    if (keycode < QK_KB_10 || keycode >= QK_KB_10 + MP_WINDOW_KEYS) return true;
-    if (pressed) {
-        const uint16_t kc = mp_keys.window_kc[keycode - QK_KB_10][mp_host_is_mac() ? 1 : 0];
-        if (kc != KC_NO && kc <= QK_MODS_MAX) tap_code16(kc);
+// ---------------------------------------------------------------------------
+// Extra block (revision 37): another 64 bytes from the end of the macro
+// buffer, before the key block (the keymap does not move):
+//   config.h: #define MATRIX_POINTING_EXTRA_BLOCK
+//             #define DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 192)
+// - home row marks: the base layer's F and J keys (also as the tap of a
+//   mod-tap / layer-tap) stay lit at home_led % in home_led_color;
+// - window keys held for the hold time send window_hold_kc (up to two
+//   shortcuts one after the other, e.g. Win + left, Win + up for the top
+//   left quarter) instead of their shortcut;
+// - lock_minutes without a key, knob or touchpad: the screen lock shortcut
+//   of the host (Win + L, Ctrl + Cmd + Q on a Mac), once.
+// Values 0xD2 home_led (0-100), 0xD3 home_led_color, 0xD4 lock_minutes
+// (0-60), 0xD5..0xEC window_hold_kc: 0xD5 + (key * 2 + mac) * 2 + step
+// (2 bytes).
+#    if defined(MATRIX_POINTING_EXTRA_BLOCK)
+#        define MP_EXTRA_BLOCK
+#        define MP_EXTRA_EEPROM_ADDR ((TOTAL_EEPROM_BYTE_COUNT) - 192)
+#        define MP_EXTRA_MAGIC 0x4B32 // 'K2'
+_Static_assert(DYNAMIC_KEYMAP_EEPROM_MAX_ADDR < MP_EXTRA_EEPROM_ADDR, "the macro buffer overlaps the extra block: DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - 192)");
+typedef struct __attribute__((packed)) {
+    uint16_t magic;
+    uint8_t  version;
+    uint8_t  checksum;
+    uint8_t  home_led;       // % brightness, 0 = off
+    uint8_t  home_led_color; // 0 = the lighting color, 2.. = like the layer colors
+    uint8_t  lock_minutes;   // 0 = off
+    uint8_t  reserved;
+    uint16_t window_hold_kc[MP_WINDOW_KEYS][2][2]; // [key][PC, Mac][first, then]
+} mp_extra_t;
+_Static_assert(sizeof(mp_extra_t) <= 64, "mp_extra_t must fit 64 bytes");
+
+static const mp_extra_t mp_extra_defaults = {
+    .magic          = MP_EXTRA_MAGIC,
+    .version        = 1,
+    .home_led       = 30,
+    .home_led_color = 8, // white
+    .window_hold_kc =
+        {
+            {{LGUI(KC_LEFT), LGUI(KC_UP)}, {LCTL(LALT(KC_U)), 0}},   // left half: top left quarter
+            {{LGUI(KC_RIGHT), LGUI(KC_UP)}, {LCTL(LALT(KC_I)), 0}},  // right half: top right quarter
+            {{0, 0}, {0, 0}},                                        // maximize
+            {{0, 0}, {0, 0}},                                        // minimize
+            {{LGUI(LSFT(KC_LEFT)), 0}, {LCTL(LALT(LGUI(KC_LEFT))), 0}}, // next display: previous one
+            {{0, 0}, {0, 0}},                                        // restore
+        },
+};
+static mp_extra_t mp_extra = {0};
+
+static uint8_t mp_extra_checksum(const mp_extra_t *e) {
+    const uint8_t *b   = (const uint8_t *)e;
+    uint8_t        sum = 0x5A;
+    for (uint8_t i = 4; i < sizeof(mp_extra_t); i++) sum = (uint8_t)((sum << 1 | sum >> 7) ^ b[i]);
+    return sum;
+}
+static void mp_extra_load(void) {
+    eeprom_read_block(&mp_extra, (void *)(uintptr_t)MP_EXTRA_EEPROM_ADDR, sizeof(mp_extra));
+    if (mp_extra.magic != MP_EXTRA_MAGIC || mp_extra.version != 1 || mp_extra.checksum != mp_extra_checksum(&mp_extra)) {
+        mp_extra = mp_extra_defaults; // fresh (or the end of an old macro buffer)
+    }
+}
+static void mp_extra_save(void) {
+    mp_extra.magic    = MP_EXTRA_MAGIC;
+    mp_extra.version  = 1;
+    mp_extra.checksum = mp_extra_checksum(&mp_extra);
+    eeprom_update_block(&mp_extra, (void *)(uintptr_t)MP_EXTRA_EEPROM_ADDR, sizeof(mp_extra));
+}
+static bool mp_extra_get_value(uint8_t id, uint8_t *data) {
+    switch (id) {
+        case 0xD2: data[0] = mp_extra.home_led; return true;
+        case 0xD3: data[0] = mp_extra.home_led_color; return true;
+        case 0xD4: data[0] = mp_extra.lock_minutes; return true;
+    }
+    if (id >= 0xD5 && id <= 0xEC) {
+        const uint8_t n = id - 0xD5;
+        uint16_t      v;
+        memcpy(&v, &mp_extra.window_hold_kc[n / 4][(n / 2) % 2][n % 2], sizeof(v));
+        data[0] = v >> 8;
+        data[1] = v & 0xFF;
+        return true;
     }
     return false;
+}
+static void mp_config_changed(void);
+static bool mp_extra_set_value(uint8_t id, const uint8_t *data) {
+    switch (id) {
+        case 0xD2:
+            mp_extra.home_led = data[0] > 100 ? 100 : data[0];
+            mp_config_changed(); // the other half lights its home keys too
+            return true;
+        case 0xD3:
+            mp_extra.home_led_color = data[0] > 8 ? 0 : data[0];
+            mp_config_changed();
+            return true;
+        case 0xD4:
+            mp_extra.lock_minutes = data[0] > 60 ? 60 : data[0];
+            return true;
+    }
+    if (id >= 0xD5 && id <= 0xEC) {
+        const uint8_t  n = id - 0xD5;
+        const uint16_t v = (uint16_t)((data[0] << 8) | data[1]);
+        memcpy(&mp_extra.window_hold_kc[n / 4][(n / 2) % 2][n % 2], &v, sizeof(v));
+        return true;
+    }
+    return false;
+}
+
+// Window key held (0xFF none): when, whether the hold shortcuts went.
+static uint8_t  mp_win_held      = 0xFF;
+static uint16_t mp_win_since     = 0;
+static bool     mp_win_hold_done = false;
+
+static bool mp_win_has_hold(uint8_t key) {
+    return mp_extra.window_hold_kc[key][mp_host_is_mac() ? 1 : 0][0] != KC_NO;
+}
+
+static void mp_win_send_hold(uint8_t key) {
+    const uint8_t os = mp_host_is_mac() ? 1 : 0;
+    for (uint8_t step = 0; step < 2; step++) {
+        const uint16_t kc = mp_extra.window_hold_kc[key][os][step];
+        if (kc == KC_NO || kc > QK_MODS_MAX) continue;
+        if (step) wait_ms(60); // let the first one settle (Windows' snap)
+        tap_code16(kc);
+    }
+}
+
+// Screen lock after no input (revision 37).
+static uint32_t mp_activity_at = 0;
+static bool     mp_locked      = false;
+static void     mp_activity(void) {
+    mp_activity_at = timer_read32();
+    mp_locked      = false;
+}
+#    else
+static void mp_extra_load(void) {}
+static void mp_extra_save(void) {}
+static bool mp_extra_get_value(uint8_t id, uint8_t *data) {
+    return false;
+}
+static bool mp_extra_set_value(uint8_t id, const uint8_t *data) {
+    return false;
+}
+static void mp_activity(void) {}
+#    endif
+
+static void mp_window_tap(uint8_t key) {
+    const uint16_t kc = mp_keys.window_kc[key][mp_host_is_mac() ? 1 : 0];
+    if (kc != KC_NO && kc <= QK_MODS_MAX) tap_code16(kc);
+}
+
+static bool mp_window_key(uint16_t keycode, bool pressed) {
+    if (keycode < QK_KB_10 || keycode >= QK_KB_10 + MP_WINDOW_KEYS) return true;
+    const uint8_t key = keycode - QK_KB_10;
+#    ifdef MP_EXTRA_BLOCK
+    // Revision 37: a key with hold shortcuts waits for the hold time.
+    if (pressed && mp_win_has_hold(key)) {
+        mp_win_held      = key;
+        mp_win_since     = timer_read();
+        mp_win_hold_done = false;
+        return false;
+    }
+    if (!pressed && mp_win_held == key) {
+        if (!mp_win_hold_done) mp_window_tap(key);
+        mp_win_held = 0xFF;
+        return false;
+    }
+#    endif
+    if (pressed) mp_window_tap(key);
+    return false;
+}
+
+// Timers of the extra block: window key holds, the screen lock.
+static void mp_extra_task(void) {
+#    ifdef MP_EXTRA_BLOCK
+    if (mp_win_held != 0xFF && !mp_win_hold_done && timer_elapsed(mp_win_since) >= (uint16_t)mp_keys.knob.hold_ms * 10) {
+        mp_win_hold_done = true;
+        mp_win_send_hold(mp_win_held);
+    }
+#        ifdef SPLIT_KEYBOARD
+    if (!is_keyboard_master()) return;
+#        endif
+    if (mp_extra.lock_minutes && !mp_locked && timer_elapsed32(mp_activity_at) >= (uint32_t)mp_extra.lock_minutes * 60000UL) {
+        mp_locked = true;
+        // Not while the computer sleeps (a key would wake it up).
+        if (usb_device_state_get_configure_state() == USB_DEVICE_STATE_CONFIGURED) {
+            tap_code16(mp_host_is_mac() ? LCTL(LGUI(KC_Q)) : LGUI(KC_L));
+        }
+    }
+#    endif
 }
 
 // Knob values (revision 32): 0xBC..0xCA, see mp_knob_cfg_t.
@@ -973,6 +1155,16 @@ static void mp_keys_save(void) {}
 static bool mp_window_key(uint16_t keycode, bool pressed) {
     return true;
 }
+static void mp_extra_task(void) {}
+static void mp_extra_load(void) {}
+static void mp_extra_save(void) {}
+static bool mp_extra_get_value(uint8_t id, uint8_t *data) {
+    return false;
+}
+static bool mp_extra_set_value(uint8_t id, const uint8_t *data) {
+    return false;
+}
+static void mp_activity(void) {}
 static bool mp_keys_get_value(uint8_t id, uint8_t *data) {
     return false;
 }
@@ -1352,6 +1544,7 @@ static void mp_load(void) {
     }
     mp_os_load();
     mp_keys_load();
+    mp_extra_load();
 }
 
 // Drivers may ask for settings before keyboard_post_init_user() runs.
@@ -2702,6 +2895,38 @@ static void mp_knob_task(void) {}
 #endif // MP_KNOBS
 
 // ---------------------------------------------------------------------------
+// Home row marks (revision 37): settings of the USB half [%, color], which
+// the other half gets with the split sync.
+static uint8_t mp_home_synced[2]                       = {0, 0};
+static bool    mp_home_have_synced __attribute__((unused)) = false;
+
+__attribute__((unused)) static void mp_home_pack(uint8_t *o) {
+#ifdef MP_EXTRA_BLOCK
+    o[0] = mp_extra.home_led;
+    o[1] = mp_extra.home_led_color;
+#else
+    o[0] = o[1] = 0;
+#endif
+}
+
+// [%, color] in use on this half.
+__attribute__((unused)) static void mp_home_settings(uint8_t *pct, uint8_t *color) {
+#if defined(SPLIT_KEYBOARD) && defined(MATRIX_POINTING_SPLIT_SYNC)
+    if (!is_keyboard_master()) {
+        *pct   = mp_home_have_synced ? mp_home_synced[0] : 0;
+        *color = mp_home_synced[1];
+        return;
+    }
+#endif
+#ifdef MP_EXTRA_BLOCK
+    *pct   = mp_extra.home_led;
+    *color = mp_extra.home_led_color;
+#else
+    *pct = *color = 0;
+#endif
+}
+
+// ---------------------------------------------------------------------------
 // Split keyboards: the touchpad's gestures run on the half it is wired to.
 // When USB is on the other half, settings changed from the editor only reach
 // the master, so the master sends them over (and collects swipes).
@@ -2738,7 +2963,8 @@ static void mp_config_changed(void) {
 // on, color, radius, fade. Older slaves read only what they know.
 #    define MP_SYNC_SIZE_R17 (sizeof(mp_config_t) + 9)
 #    define MP_SYNC_SIZE_R19 (sizeof(mp_config_t) + 13)
-#    define MP_SYNC_SIZE (sizeof(mp_config_t) + 15) // + edge bar on, color (revision 30)
+#    define MP_SYNC_SIZE_R30 (sizeof(mp_config_t) + 15) // + edge bar on, color (revision 30)
+#    define MP_SYNC_SIZE (sizeof(mp_config_t) + 17)     // + home row marks: %, color (revision 37)
 _Static_assert(MP_SYNC_SIZE <= RPC_M2S_BUFFER_SIZE, "Set RPC_M2S_BUFFER_SIZE to at least 64 in config.h");
 
 static void mp_sync_config_slave(uint8_t in_len, const void *in, uint8_t out_len, void *out) {
@@ -2773,12 +2999,18 @@ static void mp_sync_config_slave(uint8_t in_len, const void *in, uint8_t out_len
         memcpy(mp_glow_synced, extra + 9, sizeof(mp_glow_synced));
         mp_glow_have_synced = true;
     }
-    if (in_len >= MP_SYNC_SIZE) {
+    if (in_len >= MP_SYNC_SIZE_R30) {
         const uint8_t *extra = (const uint8_t *)in + sizeof(mp_config_t);
         mp_bar_synced[0]     = extra[13];
         mp_bar_synced[1]     = extra[14];
     }
 #    endif
+    if (in_len >= MP_SYNC_SIZE) {
+        const uint8_t *extra = (const uint8_t *)in + sizeof(mp_config_t);
+        mp_home_synced[0]    = extra[15];
+        mp_home_synced[1]    = extra[16];
+        mp_home_have_synced  = true;
+    }
 #    ifdef POINTING_DEVICE_DRIVER_digitizer
     extern bool digitizer_taps_as_clicks;
     digitizer_taps_as_clicks = mp_config.tap_to_click;
@@ -2908,9 +3140,11 @@ static void mp_split_housekeeping(void) {
         payload[sizeof(mp_config_t) + 12] = mp_ext.touch_glow_fade;
         payload[sizeof(mp_config_t) + 13] = mp_ext.edge_bar;
         payload[sizeof(mp_config_t) + 14] = mp_ext.edge_bar_color;
+        mp_home_pack(payload + sizeof(mp_config_t) + 15);
 #    else
         payload[sizeof(mp_config_t) + 8] = 100;
         memset(payload + sizeof(mp_config_t) + 9, 0, 6);
+        mp_home_pack(payload + sizeof(mp_config_t) + 15);
 #    endif
         if (transaction_rpc_send(MP_SYNC_CONFIG, sizeof(payload), payload)) {
             mp_synced_generation = mp_generation;
@@ -3579,6 +3813,7 @@ void matrix_pointing_housekeeping(void) {
 #endif
     mp_os_task();
     mp_knob_task();
+    mp_extra_task();
     mp_split_housekeeping();
     mp_mirror_task();
     mp_sensor_task();
@@ -3774,6 +4009,51 @@ static void mp_guide_render(uint8_t led_min, uint8_t led_max, uint8_t layer_colo
 }
 #endif
 
+// Home row marks (revision 37): the LEDs of the base layer's F and J keys
+// (also as the tap of a mod-tap / layer-tap), found again every 2 s.
+static uint8_t mp_home_base(uint16_t kc) {
+    if (kc <= QK_MODS_MAX) return kc & 0xFF;
+    if (kc >= QK_MOD_TAP && kc <= QK_MOD_TAP_MAX) return kc & 0xFF;
+    if (kc >= QK_LAYER_TAP && kc <= QK_LAYER_TAP_MAX) return kc & 0xFF;
+    return 0;
+}
+
+static void mp_home_render(uint8_t led_min, uint8_t led_max) {
+    uint8_t pct, color;
+    mp_home_settings(&pct, &color);
+    if (!pct) return;
+    static uint8_t  leds[4] = {NO_LED, NO_LED, NO_LED, NO_LED};
+    static uint16_t found   = 0;
+    static bool     have    = false;
+    if (!have || timer_elapsed(found) > 2000) {
+        have           = true;
+        found          = timer_read();
+        uint8_t n      = 0;
+        const uint8_t base = get_highest_layer(default_layer_state);
+        for (uint8_t i = 0; i < ARRAY_SIZE(leds); i++) leds[i] = NO_LED;
+        for (uint8_t row = 0; row < MATRIX_ROWS && n < ARRAY_SIZE(leds); row++) {
+            for (uint8_t col = 0; col < MATRIX_COLS && n < ARRAY_SIZE(leds); col++) {
+                const uint8_t key = mp_home_base(keymap_key_to_keycode(base, (keypos_t){.row = row, .col = col}));
+                if (key != KC_F && key != KC_J) continue;
+                const uint8_t led = g_led_config.matrix_co[row][col];
+                if (led != NO_LED) leds[n++] = led;
+            }
+        }
+    }
+    uint8_t hue = rgb_matrix_get_hue(), sat = rgb_matrix_get_sat();
+    if (color >= 2 && color - 2 < (int)ARRAY_SIZE(mp_led_hs)) {
+        hue = mp_led_hs[color - 2][0];
+        sat = mp_led_hs[color - 2][1];
+    }
+    uint16_t val = (uint16_t)pct * 255 / 100;
+    if (val > RGB_MATRIX_MAXIMUM_BRIGHTNESS) val = RGB_MATRIX_MAXIMUM_BRIGHTNESS;
+    const hsv_t hsv = {hue, sat, (uint8_t)val};
+    const rgb_t rgb = hsv_to_rgb(hsv);
+    for (uint8_t i = 0; i < ARRAY_SIZE(leds); i++) {
+        if (leds[i] != NO_LED && leds[i] >= led_min && leds[i] < led_max) rgb_matrix_set_color(leds[i], rgb.r, rgb.g, rgb.b);
+    }
+}
+
 bool matrix_pointing_rgb_indicators(uint8_t led_min, uint8_t led_max) {
     mp_ensure_loaded();
     bool          keep_going = true;
@@ -3796,6 +4076,7 @@ bool matrix_pointing_rgb_indicators(uint8_t led_min, uint8_t led_max) {
 #ifdef MP_EDGES
     mp_glow_render(led_min, led_max);
 #endif
+    mp_home_render(led_min, led_max);
     return keep_going;
 }
 
@@ -4002,6 +4283,7 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
             if (mp_combo_get_value(*value_id, value_data, length - 3)) return;
             if (mp_os_get_value(*value_id, value_data)) return;
             if (mp_keys_get_value(*value_id, value_data)) return;
+            if (mp_extra_get_value(*value_id, value_data)) return;
             if (mp_mirror_get_value(*value_id, value_data)) return;
             if (*value_id == 0xA9) {
                 // Touchpad movement fetched from the other half in the last
@@ -4043,6 +4325,7 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
             }
             if (mp_os_set_value(*value_id, value_data)) return;
             if (mp_keys_set_value(*value_id, value_data)) return;
+            if (mp_extra_set_value(*value_id, value_data)) return;
             if (mp_mirror_set_value(*value_id, value_data)) return;
             const mp_field_t *field = mp_find_field(*value_id);
             void             *block = &mp_config;
@@ -4066,6 +4349,7 @@ void via_custom_value_command_kb(uint8_t *data, uint8_t length) {
             mp_ext_save();
             mp_os_save();
             mp_keys_save();
+            mp_extra_save();
             return;
         default:
             *command_id = id_unhandled;
@@ -4333,6 +4617,7 @@ report_mouse_t matrix_pointing_task(report_mouse_t r) {
 #ifdef MP_EDGES
     mp_tpm_apply(mp_tpm_action(), &x, &y, &r);
 #endif
+    if (x || y || r.h || r.v || r.buttons) mp_activity();
 
 #ifdef MP_SMOOTH
     return mp_smooth(r, x, y);
@@ -4381,6 +4666,7 @@ static uint16_t mp_last_key_time = 0;
 static bool     mp_key_pressed   = false;
 
 bool matrix_pointing_process_record(uint16_t keycode, keyrecord_t *record) {
+    if (record->event.pressed) mp_activity();
     if (record->event.pressed && !matrix_pointing_is_mouse_record(keycode, record)) {
         mp_last_key_time = timer_read();
         mp_key_pressed   = true;

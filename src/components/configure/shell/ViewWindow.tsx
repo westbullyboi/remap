@@ -25,6 +25,7 @@ import Keycodes from '../keycodes/Keycodes.container';
 import { MacroKey, MacroTap } from '../../../services/macro/Macro';
 import OsProfileBar from './OsProfileBar';
 import { WindowKeysCard } from './WindowKeysCard';
+import { WindowHoldCard } from './ExtraCards';
 import SelfTestPanel from '../selftest/SelfTestPanel';
 import { useOsEdit } from '../../../services/pointing/OsProfiles';
 
@@ -158,7 +159,12 @@ function MacroWindowBody() {
       </div>
     );
   }
-  const windowKeys = <WindowKeysCard keyboard={keyboard} />;
+  const windowKeys = (
+    <>
+      <WindowKeysCard keyboard={keyboard} />
+      <WindowHoldCard keyboard={keyboard} />
+    </>
+  );
   if (!maxCount) {
     return (
       <div>

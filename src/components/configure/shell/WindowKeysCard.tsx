@@ -38,11 +38,20 @@ const ENTER = 0x28;
 const BSPC = 0x2a;
 const KEY_M = 0x10;
 const KEY_F = 0x09;
+const KEY_Z = 0x1d;
+const KEY_D = 0x07;
+const KEY_C = 0x06;
+const KEY_U = 0x18;
+const KEY_I = 0x0c;
+const KEY_J = 0x0d;
+const KEY_K = 0x0e;
+const TAB = 0x2b;
+const HOME = 0x4a;
 // The "Custom..." choice of the lists.
 const CUSTOM = -1;
 
 // Shortcuts to choose from, per OS.
-const PC_OPTIONS = [
+export const PC_OPTIONS = [
   0,
   GUI | LEFT,
   GUI | RIGHT,
@@ -50,8 +59,13 @@ const PC_OPTIONS = [
   GUI | DOWN,
   GUI | SFT | RIGHT,
   GUI | SFT | LEFT,
+  GUI | SFT | UP,
+  GUI | KEY_Z,
+  GUI | TAB,
+  GUI | KEY_D,
+  GUI | HOME,
 ];
-const MAC_OPTIONS = [
+export const MAC_OPTIONS = [
   0,
   CTL | ALT | LEFT,
   CTL | ALT | RIGHT,
@@ -59,9 +73,56 @@ const MAC_OPTIONS = [
   CTL | ALT | BSPC,
   CTL | ALT | GUI | RIGHT,
   CTL | ALT | GUI | LEFT,
+  CTL | ALT | KEY_U,
+  CTL | ALT | KEY_I,
+  CTL | ALT | KEY_J,
+  CTL | ALT | KEY_K,
+  CTL | ALT | KEY_C,
   GUI | KEY_M,
   CTL | GUI | KEY_F,
+  CTL | UP,
+  CTL | DOWN,
 ];
+
+// What the shortcuts do (Windows 11 / Rectangle's defaults on a Mac).
+const PC_NAMES: { [code: number]: string } = {
+  [GUI | LEFT]: 'Left half',
+  [GUI | RIGHT]: 'Right half',
+  [GUI | UP]: 'Maximize',
+  [GUI | DOWN]: 'Minimize / restore',
+  [GUI | SFT | RIGHT]: 'Next display',
+  [GUI | SFT | LEFT]: 'Previous display',
+  [GUI | SFT | UP]: 'Full height',
+  [GUI | KEY_Z]: 'Snap layouts',
+  [GUI | TAB]: 'Task view',
+  [GUI | KEY_D]: 'Show the desktop',
+  [GUI | HOME]: 'Minimize the other windows',
+};
+const MAC_NAMES: { [code: number]: string } = {
+  [CTL | ALT | LEFT]: 'Left half',
+  [CTL | ALT | RIGHT]: 'Right half',
+  [CTL | ALT | ENTER]: 'Maximize',
+  [CTL | ALT | BSPC]: 'Restore',
+  [CTL | ALT | GUI | RIGHT]: 'Next display',
+  [CTL | ALT | GUI | LEFT]: 'Previous display',
+  [CTL | ALT | KEY_U]: 'Top left quarter',
+  [CTL | ALT | KEY_I]: 'Top right quarter',
+  [CTL | ALT | KEY_J]: 'Bottom left quarter',
+  [CTL | ALT | KEY_K]: 'Bottom right quarter',
+  [CTL | ALT | KEY_C]: 'Center',
+  [GUI | KEY_M]: 'Minimize',
+  [CTL | GUI | KEY_F]: 'Full screen',
+  [CTL | UP]: 'Mission Control',
+  [CTL | DOWN]: "The app's windows",
+};
+
+// "Win + Z (Snap layouts)".
+export function shortcutChoiceLabel(code: number, mac: boolean): string {
+  const name = (mac ? MAC_NAMES : PC_NAMES)[code];
+  return name
+    ? `${shortcutLabel(code, mac)} (${t(name)})`
+    : shortcutLabel(code, mac);
+}
 
 const MAC_KEY_NAMES: { [usage: number]: string } = {
   [ENTER]: 'Return',
@@ -294,11 +355,11 @@ export function WindowKeysCard(props: { keyboard: IKeyboard | null }) {
         }}
       >
         {!options.includes(value) && (
-          <option value={value}>{shortcutLabel(value, mac)}</option>
+          <option value={value}>{shortcutChoiceLabel(value, mac)}</option>
         )}
         {options.map((code) => (
           <option key={code} value={code}>
-            {shortcutLabel(code, mac)}
+            {shortcutChoiceLabel(code, mac)}
           </option>
         ))}
         <option value={CUSTOM}>{t('Custom...')}</option>

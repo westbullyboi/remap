@@ -29,6 +29,7 @@ import RgbMatrixCard from '../lighting/RgbMatrixCard';
 import { EdgeZonesCard } from './EdgeZonesCard';
 import { TouchpadModesCard } from './TouchpadModesCard';
 import { CircularScrollCard, RotationCard } from './RotationCard';
+import { AutoLockCard, HomeRowCard } from '../shell/ExtraCards';
 import MotionStatsLine from '../split/MotionStatsLine';
 import { KeyGuideCard } from './KeyGuideCard';
 import { SensitivityCard } from './SensitivityCard';
@@ -406,6 +407,12 @@ export default function PointingSettings(props: PointingSettingsProps) {
           )}
           {props.mode === 'leds' && live && props.keyboard && (
             <TouchGlowCard keyboard={props.keyboard} />
+          )}
+          {props.mode === 'leds' && live && props.keyboard && (
+            <HomeRowCard keyboard={props.keyboard} />
+          )}
+          {props.mode === 'timing' && live && props.keyboard && (
+            <AutoLockCard keyboard={props.keyboard} />
           )}
           {sections.map((section) => (
             <section className="pointing-card" key={section.title}>
