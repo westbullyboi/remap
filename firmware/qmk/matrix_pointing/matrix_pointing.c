@@ -56,7 +56,7 @@ __attribute__((weak)) bool usb_hires_scroll_enabled(void);
 // Read-only value 0x7C: revision of this module, so the editor can tell that
 // the keyboard runs an older build. Bump it with every behaviour change.
 #define MP_REVISION_VALUE_ID 0x7C
-#define MP_REVISION 35
+#define MP_REVISION 36
 // Read-only value 0x7D: the other half of a split keyboard —
 // [state, its revision (2), this build's ID (2), its build ID (2)];
 // state 0 = not known yet, 1 = known, 2 = it runs firmware without this
@@ -588,6 +588,15 @@ static bool mp_os_get_value(uint8_t id, uint8_t *data) {
         case 0xA4: data[0] = mp_os_seen; return true;
         case 0xA5: data[0] = mp_os_active; return true;
         case 0xA6: data[0] = mp_os.swap_ctl_gui[mp_os_edit]; return true;
+        case 0xD1: {
+            // Revision 36: is Ctrl swapped with GUI (Win / Cmd) now, and why.
+            // Bit 0 swapped now, 1 by the per-OS setting in use, 2 by QMK's
+            // own setting saved in the keyboard (magic keycodes CG_SWAP etc.).
+            keymap_config_t saved;
+            eeconfig_read_keymap(&saved);
+            data[0] = (keymap_config.swap_lctl_lgui || keymap_config.swap_rctl_rgui ? 1 : 0) | (mp_os.swap_ctl_gui[mp_os_active] ? 2 : 0) | (saved.swap_lctl_lgui || saved.swap_rctl_rgui ? 4 : 0);
+            return true;
+        }
     }
     const int8_t at = mp_os_mac_offset(id);
     if (mp_os_edit == 1 && at >= 0) {
@@ -622,6 +631,18 @@ static bool mp_os_set_value(uint8_t id, const uint8_t *data) {
             mp_os.swap_ctl_gui[mp_os_edit] = data[0] ? 1 : 0;
             mp_os_apply();
             return true;
+        case 0xD1: {
+            // Revision 36: turn QMK's own saved Ctrl / GUI swap off (the
+            // per-OS setting stays as it is: 0xA6).
+            keymap_config_t saved;
+            eeconfig_read_keymap(&saved);
+            saved.swap_lctl_lgui = saved.swap_rctl_rgui = false;
+            eeconfig_update_keymap(&saved);
+            const bool swap               = mp_os.swap_ctl_gui[mp_os_active];
+            keymap_config.swap_lctl_lgui = swap;
+            keymap_config.swap_rctl_rgui = swap;
+            return true;
+        }
         case 0xA4:
         case 0xA5:
             return true; // read-only

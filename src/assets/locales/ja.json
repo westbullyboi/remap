@@ -1187,5 +1187,12 @@
   "What going round sends (scrolling by default).": "回したときに送るキーです（初期値はスクロール）。",
   "On, a notch every {{step}} degrees": "オン、{{step}}° ごとに1段",
   "Off (Scroll method: Circular turns it on)": "オフ（「スクロール方式」を「円を描く」にするとオン）",
-  "Scroll method Circular: one finger from the rim, round the middle, scrolls (clockwise = down)": "スクロール方式「円を描く」：縁から指1本で中心のまわりをなぞるとスクロールする（右回り＝下）"
+  "Scroll method Circular: one finger from the rim, round the middle, scrolls (clockwise = down)": "スクロール方式「円を描く」：縁から指1本で中心のまわりをなぞるとスクロールする（右回り＝下）",
+  "\"Swap Ctrl and Cmd (Win)\" is on for the {{set}} settings": "{{set}} の設定で「Ctrl と Cmd（Win）を入れ替え」がオンになっている",
+  "the keyboard's own setting is on (saved in the keyboard, e.g. by a CG_SWAP key)": "キーボード本体の入れ替え設定がオンになっている（CG_SWAP などのキーで保存されたもの）",
+  "Ctrl and Win / Cmd are swapped on this keyboard: keys set to Win send Ctrl (and Ctrl sends Win).": "このキーボードでは Ctrl と Win / Cmd が入れ替わっています。Win を設定したキーは Ctrl として（Ctrl は Win として）送られます。",
+  "Because {{reasons}}.": "原因：{{reasons}}。",
+  ", and ": "、かつ",
+  "Could not change it. Try again.": "変更できませんでした。もう一度お試しください。",
+  "Stop swapping": "入れ替えをやめる"
 }

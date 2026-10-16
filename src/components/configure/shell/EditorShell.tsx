@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector, useStore } from 'react-redux';
+import CtrlGuiSwapBanner from '../split/CtrlGuiSwapBanner';
 import { t } from 'i18next';
 import Keymap3DView from '../keymap3d/Keymap3DView';
 import ViewWindow from './ViewWindow';
@@ -121,6 +122,7 @@ export default function EditorShell() {
             <SplitFirmwareNotice />
             <SplitSyncBanner />
             <FlashBackupBanner />
+            <CtrlGuiSwapBanner />
           </div>
           <section
             className="mx-card"

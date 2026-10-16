@@ -1094,5 +1094,12 @@
   "What going round sends (scrolling by default).": "What going round sends (scrolling by default).",
   "On, a notch every {{step}} degrees": "On, a notch every {{step}} degrees",
   "Off (Scroll method: Circular turns it on)": "Off (Scroll method: Circular turns it on)",
-  "Scroll method Circular: one finger from the rim, round the middle, scrolls (clockwise = down)": "Scroll method Circular: one finger from the rim, round the middle, scrolls (clockwise = down)"
+  "Scroll method Circular: one finger from the rim, round the middle, scrolls (clockwise = down)": "Scroll method Circular: one finger from the rim, round the middle, scrolls (clockwise = down)",
+  "\"Swap Ctrl and Cmd (Win)\" is on for the {{set}} settings": "\"Swap Ctrl and Cmd (Win)\" is on for the {{set}} settings",
+  "the keyboard's own setting is on (saved in the keyboard, e.g. by a CG_SWAP key)": "the keyboard's own setting is on (saved in the keyboard, e.g. by a CG_SWAP key)",
+  "Ctrl and Win / Cmd are swapped on this keyboard: keys set to Win send Ctrl (and Ctrl sends Win).": "Ctrl and Win / Cmd are swapped on this keyboard: keys set to Win send Ctrl (and Ctrl sends Win).",
+  "Because {{reasons}}.": "Because {{reasons}}.",
+  ", and ": ", and ",
+  "Could not change it. Try again.": "Could not change it. Try again.",
+  "Stop swapping": "Stop swapping"
 }
